@@ -86,6 +86,13 @@ class Store:
                 status TEXT NOT NULL, created_at TEXT NOT NULL,
                 FOREIGN KEY(source_id) REFERENCES sources(id)
             );
+            CREATE TABLE IF NOT EXISTS render_jobs (
+                id INTEGER PRIMARY KEY, job_key TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL CHECK(status IN ('pending','running','done','failed')),
+                payload TEXT NOT NULL, result_path TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS translation_cache (
                 cache_key TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL
             );
@@ -159,3 +166,57 @@ class Store:
     def publications(self) -> list[dict]:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute("SELECT * FROM publications ORDER BY id DESC")]
+
+    def enqueue_renders(self, jobs: list[tuple[str, dict]]) -> tuple[int, int]:
+        """Deduplicate by immutable manifest contents, not filename alone."""
+        import json
+        inserted = 0
+        with self._connect() as conn:
+            for key, payload in jobs:
+                cur = conn.execute("""INSERT OR IGNORE INTO render_jobs
+                    (job_key,status,payload,created_at,updated_at)
+                    VALUES(?,'pending',?,?,?)""",
+                    (key, json.dumps(payload, ensure_ascii=False), now_utc(), now_utc()))
+                inserted += cur.rowcount
+        return inserted, len(jobs) - inserted
+
+    def claim_next_render(self) -> dict | None:
+        """Atomic claim for one pending local render, avoiding duplicate workers."""
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM render_jobs WHERE status='pending' ORDER BY id LIMIT 1").fetchone()
+            if row is None:
+                return None
+            conn.execute("""UPDATE render_jobs SET status='running',
+                attempts=attempts+1,updated_at=? WHERE id=?""", (now_utc(), row['id']))
+            return dict(row)
+
+    def finish_render(self, job_id: int, path: str, error: str) -> None:
+        with self._connect() as conn:
+            cur = conn.execute("""UPDATE render_jobs
+                SET status=?,result_path=?,error=?,updated_at=?
+                WHERE id=? AND status='running'""",
+                ("failed" if error else "done", path, error, now_utc(), job_id))
+            if cur.rowcount != 1:
+                raise RuntimeError("Render job was not running")
+
+    def retry_failed_renders(self) -> int:
+        with self._connect() as conn:
+            return conn.execute("""UPDATE render_jobs SET status='pending',error='',updated_at=?
+                WHERE status='failed'""", (now_utc(),)).rowcount
+
+    def recover_interrupted_renders(self) -> int:
+        """Only safe for local renders, never for remote posts (risk of duplicates)."""
+        with self._connect() as conn:
+            return conn.execute("""UPDATE render_jobs SET status='pending',updated_at=?
+                WHERE status='running'""", (now_utc(),)).rowcount
+
+    def render_counts(self) -> dict[str, int]:
+        with self._connect() as conn:
+            return {r['status']: r['n'] for r in conn.execute(
+                "SELECT status,COUNT(*) n FROM render_jobs GROUP BY status")}
+
+    def render_jobs(self, limit: int = 100) -> list[dict]:
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM render_jobs ORDER BY id DESC LIMIT ?", (limit,))]

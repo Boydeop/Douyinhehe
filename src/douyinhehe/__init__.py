@@ -1,3 +1,3 @@
-"""Douyinhehe Pro: licensed video affiliate workflow studio."""
+"""Douyinhehe Pro 2.0: licensed affiliate video studio."""
 
-__version__ = "0.1.0"
+__version__ = "2.0.0"

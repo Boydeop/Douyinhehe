@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -13,9 +14,17 @@ from typing import Callable
 
 
 def find_binary(name: str) -> str:
-    candidate = Path(sys.executable).resolve().parent / "bin" / (name + (".exe" if sys.platform == "win32" else ""))
-    if candidate.is_file():
-        return str(candidate)
+    filename = name + (".exe" if sys.platform == "win32" else "")
+    # PyInstaller onedir EXE lives in dist/DouyinhehePro, whereas its
+    # _internal module tree may live elsewhere. The portable bin directory
+    # must be beside the executable, not inside the unpacked Python modules.
+    roots = [Path(sys.executable).resolve().parent]
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        roots.append(Path(sys._MEIPASS))
+    for root in roots:
+        candidate = root / "bin" / filename
+        if candidate.is_file():
+            return str(candidate)
     resolved = shutil.which(name)
     if resolved:
         return resolved
@@ -166,17 +175,22 @@ def render_video(source: Path, target: Path, preset: EditPreset,
         raise ValueError("Không được ghi đè video nguồn.")
     probe_video(source)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="douyinhehe-") as temp:
+    # Atomic output: FFmpeg failures must NEVER destroy an earlier valid render.
+    # Temp output stays on the same filesystem so os.replace is atomic.
+    with tempfile.TemporaryDirectory(prefix=".douyinhehe-", dir=target.parent) as temp:
         overlay = Path(temp) / "credit.png"
+        staged = Path(temp) / "render.mp4"
         make_overlay(preset, overlay)
-        command = build_edit_command(source, target, overlay, preset, find_binary("ffmpeg"))
+        command = build_edit_command(source, staged, overlay, preset, find_binary("ffmpeg"))
         if progress:
             progress(f"Render: {source.name}")
         proc = subprocess.run(command, capture_output=True, text=True, timeout=7200, check=False)
         if proc.returncode:
-            target.unlink(missing_ok=True)
             raise RuntimeError(f"FFmpeg thất bại: {proc.stderr[-2000:]}")
-    probe_video(target)
+        probe_video(staged)
+        if staged.stat().st_size < 1024:
+            raise RuntimeError("FFmpeg tạo file rỗng hoặc không hợp lệ.")
+        os.replace(staged, target)
     if progress:
         progress(f"Xuất thành công: {target.name}")
     return target

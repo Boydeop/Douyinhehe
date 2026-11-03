@@ -2,45 +2,63 @@ name: Build Windows desktop EXE
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
-      - name: Install FFmpeg binaries
+      - name: Install real FFmpeg binaries (not Chocolatey shims)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           choco install ffmpeg --no-progress -y
-          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
-          $ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
+          if ($LASTEXITCODE -ne 0) { throw 'Chocolatey FFmpeg installation failed' }
+          $chocoRoot = if ($env:ChocolateyInstall) { $env:ChocolateyInstall } else { 'C:\ProgramData\chocolatey' }
+          $toolsDir = Join-Path $chocoRoot 'lib\ffmpeg\tools'
+          if (-not (Test-Path $toolsDir)) { throw "Missing Chocolatey ffmpeg tools: $toolsDir" }
+          $real = Get-ChildItem -Path $toolsDir -Filter 'ffprobe.exe' -Recurse -File |
+            Where-Object { $_.Length -gt 1MB -and (Test-Path (Join-Path $_.DirectoryName 'ffmpeg.exe')) } |
+            Select-Object -First 1
+          if (-not $real) { throw 'Real ffprobe.exe not found (Chocolatey command shims cannot be bundled)' }
+          $ffmpeg = Join-Path $real.DirectoryName 'ffmpeg.exe'
           New-Item -ItemType Directory -Force -Path vendor/bin | Out-Null
-          Copy-Item $ffmpeg vendor/bin/ffmpeg.exe
-          Copy-Item $ffprobe vendor/bin/ffprobe.exe
-          & vendor/bin/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          Copy-Item -LiteralPath $ffmpeg -Destination vendor/bin/ffmpeg.exe -Force
+          Copy-Item -LiteralPath $real.FullName -Destination vendor/bin/ffprobe.exe -Force
+          & ./vendor/bin/ffprobe.exe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Copied ffprobe is not runnable' }
+          & ./vendor/bin/ffmpeg.exe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Copied ffmpeg is not runnable' }
       - name: Build EXE with PyInstaller
         shell: pwsh
         run: ./scripts/build_windows.ps1
-      - name: Bundle FFmpeg / credits
+      - name: Bundle FFmpeg and credits
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path dist/DouyinhehePro/bin | Out-Null
-          Copy-Item vendor/bin/ffmpeg.exe dist/DouyinhehePro/bin/ffmpeg.exe
-          Copy-Item vendor/bin/ffprobe.exe dist/DouyinhehePro/bin/ffprobe.exe
-          Copy-Item docs/THIRD_PARTY.md dist/DouyinhehePro/THIRD_PARTY.md
+          Copy-Item vendor/bin/ffmpeg.exe dist/DouyinhehePro/bin/ffmpeg.exe -Force
+          Copy-Item vendor/bin/ffprobe.exe dist/DouyinhehePro/bin/ffprobe.exe -Force
+          Copy-Item docs/THIRD_PARTY.md dist/DouyinhehePro/THIRD_PARTY.md -Force
           if (-not (Test-Path dist/DouyinhehePro/DouyinhehePro.exe)) { throw 'Missing EXE' }
-      - name: Windows EXE smoke test
+      - name: Windows portable smoke tests
         shell: pwsh
         run: |
-          & dist/DouyinhehePro/bin/ffprobe.exe -version | Select-Object -First 1
+          $ErrorActionPreference = 'Stop'
+          & ./dist/DouyinhehePro/bin/ffprobe.exe -version | Select-Object -First 1
           if ($LASTEXITCODE -ne 0) { throw 'ffprobe smoke test failed' }
+          & ./dist/DouyinhehePro/bin/ffmpeg.exe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffmpeg smoke test failed' }
+          & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
       - name: ZIP portable release folder
