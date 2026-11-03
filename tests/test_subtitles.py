@@ -41,11 +41,13 @@ def test_gemini_opt_in_and_translation_cache(tmp_path, monkeypatch):
         def close(self):
             pass
 
-    import google
+    google = types.ModuleType("google")
+    google.__path__ = []
     fake = types.ModuleType("google.genai")
     fake.Client = Client
+    google.genai = fake
+    monkeypatch.setitem(sys.modules, "google", google)
     monkeypatch.setitem(sys.modules, "google.genai", fake)
-    monkeypatch.setattr(google, "genai", fake, raising=False)
     translate_srt(src, dest, db, api_key="fake", model_name="gemini-test", confirmed_free_tier=True)
     assert "Xin chào" in dest.read_text(encoding="utf-8")
     translate_srt(src, dest, db, api_key="fake", model_name="gemini-test", confirmed_free_tier=True)
