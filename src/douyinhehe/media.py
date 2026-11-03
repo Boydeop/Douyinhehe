@@ -1,0 +1,182 @@
+"""Local deterministic FFmpeg editor with source-credit overlays and validation."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+
+def find_binary(name: str) -> str:
+    candidate = Path(sys.executable).resolve().parent / "bin" / (name + (".exe" if sys.platform == "win32" else ""))
+    if candidate.is_file():
+        return str(candidate)
+    resolved = shutil.which(name)
+    if resolved:
+        return resolved
+    raise FileNotFoundError(f"Thiếu {name}. Cài FFmpeg hoặc dùng bản phát hành đi kèm FFmpeg.")
+
+
+def probe_video(path: Path, ffprobe: str | None = None) -> dict:
+    source = Path(path)
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    cmd = [ffprobe or find_binary("ffprobe"), "-v", "error", "-show_format", "-show_streams",
+           "-of", "json", str(source)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=45, check=False)
+    if proc.returncode:
+        raise RuntimeError((proc.stderr or "ffprobe thất bại")[:1000])
+    data = json.loads(proc.stdout)
+    if not any(s.get("codec_type") == "video" for s in data.get("streams", [])):
+        raise ValueError("Tệp không có luồng hình ảnh.")
+    return data
+
+
+@dataclass(frozen=True)
+class EditPreset:
+    width: int = 1080
+    height: int = 1920
+    fit: str = "crop"  # crop, pad, blur
+    brightness: float = 0.0
+    contrast: float = 1.0
+    saturation: float = 1.0
+    cta: str = ""
+    creator: str = ""
+    original_url: str = ""
+    subtitle: Path | None = None
+    narration: Path | None = None
+
+    def validate(self) -> None:
+        if self.width < 256 or self.height < 256 or self.width % 2 or self.height % 2:
+            raise ValueError("Kích thước video phải là số chẵn và từ 256px.")
+        if self.fit not in {"crop", "pad", "blur"}:
+            raise ValueError("Kiểu căn khung không hợp lệ.")
+        if not -0.5 <= self.brightness <= 0.5 or not 0.5 <= self.contrast <= 2.0:
+            raise ValueError("Thông số sáng/tương phản vượt giới hạn.")
+        if not 0 <= self.saturation <= 2.0:
+            raise ValueError("Độ bão hòa màu vượt giới hạn.")
+        if len(self.cta) > 140 or len(self.creator) > 140:
+            raise ValueError("CTA/tên tác giả quá dài.")
+        if not self.creator.strip() or not self.original_url.strip():
+            raise ValueError("Phải cung cấp tác giả và URL nguồn trong bản xuất.")
+        if self.subtitle and not self.subtitle.is_file():
+            raise FileNotFoundError(self.subtitle)
+        if self.narration and not self.narration.is_file():
+            raise FileNotFoundError(self.narration)
+
+
+def _font(size: int):
+    from PIL import ImageFont
+
+    options = ["C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/msyh.ttc",
+               "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "DejaVuSans.ttf"]
+    for option in options:
+        try:
+            return ImageFont.truetype(option, size=size)
+        except OSError:
+            pass
+    return ImageFont.load_default()
+
+
+def make_overlay(preset: EditPreset, target: Path) -> None:
+    """Transparent overlay with CTA, visible author attribution, and safe text wrapping."""
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGBA", (preset.width, preset.height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    pad = int(preset.width * 0.05)
+    headline = (preset.cta or "Xem chi tiết sản phẩm tại liên kết trên trang").strip()
+    max_chars = max(20, preset.width // 28)
+    lines = []
+    words = headline.split()
+    current = ""
+    for word in words:
+        if current and len(current + " " + word) > max_chars:
+            lines.append(current)
+            current = word
+        else:
+            current = (current + " " + word).strip()
+    if current:
+        lines.append(current)
+    lines = lines[:3]
+    top = int(preset.height * .74)
+    bottom = min(preset.height - pad, top + 84 * len(lines) + 95)
+    draw.rounded_rectangle((pad, top, preset.width - pad, bottom), radius=24, fill=(0, 0, 0, 178))
+    for index, line in enumerate(lines):
+        draw.text((pad + 20, top + 12 + index * 70), line, fill=(255, 255, 255, 255), font=_font(40))
+    source = f"Nguồn: {preset.creator} | Douyin"
+    draw.rounded_rectangle((pad, pad, preset.width - pad, pad + 64), radius=12, fill=(0, 0, 0, 160))
+    draw.text((pad + 12, pad + 9), source[:90], fill=(255, 255, 255, 255), font=_font(29))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    image.save(target)
+
+
+def _subtitle_filter(path: Path) -> str:
+    """Escape path for ffmpeg filtergraph, including drive colon on Windows."""
+    # ffmpeg's filtergraph parser consumes one escape layer; protect ':' and '\\'.
+    raw = str(path.resolve()).replace("\\", "/")
+    escaped = raw.replace("'", "\\\\'").replace(":", "\\\\:").replace(",", "\\,")
+    return f"subtitles=filename='{escaped}'"
+
+
+def build_edit_command(source: Path, output: Path, overlay: Path, preset: EditPreset,
+                       ffmpeg: str = "ffmpeg") -> list[str]:
+    preset.validate()
+    w, h = preset.width, preset.height
+    if preset.fit == "crop":
+        video = f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}[v0]"
+    elif preset.fit == "pad":
+        video = f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black[v0]"
+    else:
+        video = (f"[0:v]split=2[bg][fg];[bg]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                 f"crop={w}:{h},boxblur=18:1[blur];[fg]scale={w}:{h}:force_original_aspect_ratio=decrease[front];"
+                 "[blur][front]overlay=(W-w)/2:(H-h)/2[v0]")
+    look = (f"[v0]eq=brightness={preset.brightness}:contrast={preset.contrast}:"
+            f"saturation={preset.saturation}[v1]")
+    chain = f"{video};{look}"
+    subtitle_node = "v1"
+    if preset.subtitle:
+        chain += f";[v1]{_subtitle_filter(preset.subtitle)}[vs]"
+        subtitle_node = "vs"
+    chain += f";[{subtitle_node}][1:v]overlay=0:0:format=auto:shortest=1,format=yuv420p[vout]"
+    cmd = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", str(source), "-loop", "1",
+           "-i", str(overlay)]
+    if preset.narration:
+        cmd += ["-i", str(preset.narration)]
+    cmd += ["-filter_complex", chain, "-map", "[vout]"]
+    cmd += ["-map", "2:a:0"] if preset.narration else ["-map", "0:a?"]
+    cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p",
+            "-r", "30", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-movflags", "+faststart",
+            "-shortest", "-metadata", f"comment=Original: {preset.original_url}; Credit: {preset.creator}",
+            str(output)]
+    return cmd
+
+
+def render_video(source: Path, target: Path, preset: EditPreset,
+                 progress: Callable[[str], None] | None = None) -> Path:
+    preset.validate()
+    source = Path(source).resolve()
+    target = Path(target).resolve()
+    if source == target:
+        raise ValueError("Không được ghi đè video nguồn.")
+    probe_video(source)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="douyinhehe-") as temp:
+        overlay = Path(temp) / "credit.png"
+        make_overlay(preset, overlay)
+        command = build_edit_command(source, target, overlay, preset, find_binary("ffmpeg"))
+        if progress:
+            progress(f"Render: {source.name}")
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=7200, check=False)
+        if proc.returncode:
+            target.unlink(missing_ok=True)
+            raise RuntimeError(f"FFmpeg thất bại: {proc.stderr[-2000:]}")
+    probe_video(target)
+    if progress:
+        progress(f"Xuất thành công: {target.name}")
+    return target

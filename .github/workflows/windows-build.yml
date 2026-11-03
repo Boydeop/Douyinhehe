@@ -1,0 +1,54 @@
+name: Build Windows desktop EXE
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install FFmpeg binaries
+        shell: pwsh
+        run: |
+          choco install ffmpeg --no-progress -y
+          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+          $ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
+          New-Item -ItemType Directory -Force -Path vendor/bin | Out-Null
+          Copy-Item $ffmpeg vendor/bin/ffmpeg.exe
+          Copy-Item $ffprobe vendor/bin/ffprobe.exe
+          & vendor/bin/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+      - name: Build EXE with PyInstaller
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+      - name: Bundle FFmpeg / credits
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/DouyinhehePro/bin | Out-Null
+          Copy-Item vendor/bin/ffmpeg.exe dist/DouyinhehePro/bin/ffmpeg.exe
+          Copy-Item vendor/bin/ffprobe.exe dist/DouyinhehePro/bin/ffprobe.exe
+          Copy-Item docs/THIRD_PARTY.md dist/DouyinhehePro/THIRD_PARTY.md
+          if (-not (Test-Path dist/DouyinhehePro/DouyinhehePro.exe)) { throw 'Missing EXE' }
+      - name: Windows EXE smoke test
+        shell: pwsh
+        run: |
+          & dist/DouyinhehePro/bin/ffprobe.exe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffprobe smoke test failed' }
+          $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
+          Write-Host "EXE size bytes: $($file.Length)"
+      - name: ZIP portable release folder
+        shell: pwsh
+        run: Compress-Archive -Path dist/DouyinhehePro -DestinationPath DouyinhehePro-Windows-x64.zip -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DouyinhehePro-Windows-x64
+          path: DouyinhehePro-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
