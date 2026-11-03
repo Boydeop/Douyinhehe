@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
 )
 
 from .affiliate import Metrics
+from .batch import enqueue_manifest, run_queue
+from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
 from .downloader import download_authorized, parse_douyin_urls
@@ -66,7 +68,7 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Pro 0.1 · Affiliate Video Studio")
+        self.setWindowTitle("Douyinhehe Pro 2.0 · Affiliate Video Studio")
         self.setMinimumSize(1050, 760)
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
@@ -95,6 +97,8 @@ class MainWindow(QMainWindow):
             ("05  Affiliate", self.build_affiliate),
             ("06  Lên lịch", self.build_publish),
             ("07  Cài đặt", self.build_settings),
+            ("08  Batch Queue", self.build_batch_queue),
+            ("09  Kiểm tra video", self.build_delivery_check),
         ]:
             widget = QWidget()
             layout = QVBoxLayout(widget)
@@ -573,6 +577,100 @@ class MainWindow(QMainWindow):
         status.layout().addRow(check)
         status.layout().addRow(QLabel("Thư mục dữ liệu: " + str(user_data_dir())))
         layout.addWidget(status)
+
+    def build_batch_queue(self, layout):
+        panel = group("Batch 2.0 · Danh sách CSV/JSON · Kiểm soát nguồn cho từng video")
+        panel.layout().addRow(QLabel(
+            "Bắt buộc: file, original_url, creator, evidence, commercial=true, derivative=true.\n"
+            "Có thể thêm: niche, platforms, fit, cta, subtitle, brightness, contrast, saturation."
+        ))
+        self.batch_manifest = field("Đường dẫn CSV/JSON có giấy phép riêng cho mỗi video")
+        browse = QPushButton("Chọn manifest CSV/JSON")
+        browse.clicked.connect(lambda: self.chooser(
+            self.batch_manifest, filter="Manifests (*.csv *.json);;All files (*)"))
+        self.batch_out = field("Thư mục xuất video và bản ghi nguồn", str(user_data_dir() / "exports"))
+        folder = QPushButton("Chọn thư mục xuất")
+        folder.clicked.connect(lambda: self._folder(self.batch_out))
+        for key, w in (("Manifest", self.batch_manifest), ("", browse),
+                       ("Output", self.batch_out), ("", folder)):
+            panel.layout().addRow(key, w)
+        enqueue = QPushButton("THÊM VÀO HÀNG ĐỢI (loại trùng)")
+        enqueue.clicked.connect(self.on_enqueue_manifest)
+        process = QPushButton("CHẠY HÀNG ĐỢI · không ghi đè file hợp lệ khi thất bại")
+        process.clicked.connect(self.on_batch_run)
+        retry = QPushButton("Thử lại các tác vụ lỗi")
+        retry.clicked.connect(self.on_batch_retry)
+        recovery = QPushButton("Khôi phục tác vụ bị ngắt sau khi thoát ứng dụng")
+        recovery.clicked.connect(self.on_batch_recover)
+        refresh = QPushButton("Làm mới danh sách")
+        refresh.clicked.connect(self.refresh_batch)
+        for btn in (enqueue, process, retry, recovery, refresh):
+            panel.layout().addRow(btn)
+        self.batch_view = paragraph("Hàng đợi trống", 240)
+        self.batch_view.setReadOnly(True)
+        panel.layout().addRow(self.batch_view)
+        layout.addWidget(panel)
+        self.refresh_batch()
+
+    def refresh_batch(self):
+        lines = [f"#{j['id']} · {j['status']} · thử {j['attempts']} · "
+                 f"{(j['result_path'] or j['error'] or j['job_key'][:10])[:110]}"
+                 for j in self.store.render_jobs()]
+        self.batch_view.setPlainText("\n".join(lines) or "Hàng đợi trống")
+        self.log("Hàng đợi: " + str(self.store.render_counts()))
+
+    def on_enqueue_manifest(self):
+        try:
+            added, existing = enqueue_manifest(self.store, Path(self.batch_manifest.text()))
+            self.log(f"Đã xếp hàng {added} file; {existing} tác vụ trùng được bỏ qua.")
+            self.refresh_batch()
+        except Exception as exc:
+            self.alert(exc)
+
+    def on_batch_run(self):
+        target = Path(self.batch_out.text())
+        self.job("Batch Render 2.0", lambda progress: run_queue(self.store, target, progress),
+                 lambda report: (self.log("Batch: " + str(report)), self.refresh_batch()))
+
+    def on_batch_retry(self):
+        self.log(f"Đã mở lại {self.store.retry_failed_renders()} tác vụ lỗi.")
+        self.refresh_batch()
+
+    def on_batch_recover(self):
+        yes = QMessageBox.question(
+            self, "Khôi phục tác vụ", "Chỉ chọn khi không còn phiên Douyinhehe khác đang chạy.\n"
+            "Khôi phục các render bị ngắt?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if yes == QMessageBox.StandardButton.Yes:
+            self.log(f"Đã khôi phục {self.store.recover_interrupted_renders()} tác vụ.")
+            self.refresh_batch()
+
+    def build_delivery_check(self, layout):
+        panel = group("Kiểm tra kỹ thuật video trước khi lên lịch")
+        self.delivery_file = field("Chọn video đã render để kiểm tra kỹ thuật")
+        browse = QPushButton("Chọn MP4")
+        browse.clicked.connect(lambda: self.chooser(self.delivery_file))
+        self.delivery_platform = QComboBox()
+        for key, item in DESTINATIONS.items():
+            self.delivery_platform.addItem(item.label, key)
+        self.delivery_credit = paragraph("Dán mô tả có nguồn video và công khai affiliate", 115)
+        self.delivery_result = paragraph("Chưa kiểm tra", 210)
+        self.delivery_result.setReadOnly(True)
+        for label, widget in (("Video", self.delivery_file), ("", browse),
+                              ("Nền tảng", self.delivery_platform),
+                              ("Mô tả", self.delivery_credit),
+                              ("Kết quả", self.delivery_result)):
+            panel.layout().addRow(label, widget)
+        run = QPushButton("KIỂM TRA VIDEO / CTA / NGUỒN")
+        run.clicked.connect(self.on_delivery_check)
+        panel.layout().addRow(run)
+        layout.addWidget(panel)
+
+    def on_delivery_check(self):
+        path = Path(self.delivery_file.text())
+        credit = self.delivery_credit.toPlainText()
+        platform = self.delivery_platform.currentData()
+        self.job("Kiểm tra video", lambda progress: delivery_preflight(path, credit=credit, platform=platform),
+                 lambda data: self.delivery_result.setPlainText(json.dumps(data, ensure_ascii=False, indent=2)))
 
     def on_secret(self, key, field):
         try:

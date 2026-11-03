@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 0.1.0 MVP / engineering preview**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 2.0.0 engineering preview**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Implemented
 
@@ -15,7 +15,9 @@ Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle trans
 | Vietnamese TTS | Offline Windows SAPI via pyttsx3 | Vietnamese SAPI voice must already be installed; not auto-bundled |
 | Affiliate | Niche/product/campaign/link library; CTR and conversion calculator | No affiliate platform order API or automatic sales sync |
 | Publishing | Postiz Public API: list connected channels, upload video, schedule batch | Postiz API key, connected OAuth channels, provider-specific settings, server/service online required |
-| Desktop | PySide6 responsive worker queue, SQLite and Windows credential storage | First release requires user testing and platform authorizations |
+| Desktop | PySide6 worker queue, SQLite, OS credential storage, nine feature tabs | Live platform authorizations still need user testing |
+| V2 batch pipeline | CSV/JSON manifests with per-video rights, recoverable render jobs, deduplication, provenance sidecars | Only local edits auto-retry; remote publishing stays manual-approval |
+| V2 delivery QA | Codec/aspect checks and per-platform CTA/source guidance | Guidelines, not platform approval |
 
 ## Quick start (development)
 
@@ -28,9 +30,15 @@ pip install -e ".[all,dev]"
 python -m douyinhehe
 ```
 
-**Windows `.exe`:** open [Actions → Build Windows desktop EXE](../../actions/workflows/windows-build.yml), download the `DouyinhehePro-Windows-x64` artifact after a successful run, extract the ZIP and launch `DouyinhehePro.exe`. GitHub Actions must be enabled, and the workflow must succeed before an artifact exists. Its ZIP includes FFmpeg and FFprobe (check `THIRD_PARTY.md`). There is not yet an installer or a published GitHub Release.
+**Windows `.exe`:** the portable ZIP now includes the GUI executable, `bin/ffmpeg.exe`, `bin/ffprobe.exe`, and third-party notices, and must pass a frozen `--self-test`. Open [Actions → Build Windows desktop EXE](../../actions/workflows/windows-build.yml), download the `DouyinhehePro-Windows-x64` artifact after a successful run, extract the ZIP and launch `DouyinhehePro.exe`. GitHub Actions must be enabled, and the workflow must succeed before an artifact exists. Its ZIP includes FFmpeg and FFprobe (check `THIRD_PARTY.md`). There is not yet an installer or a published GitHub Release.
 
 **Build locally:** `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1`. The output executable is `dist/DouyinhehePro/DouyinhehePro.exe`. Local builds require FFmpeg in PATH unless copied to the `bin/` directory.
+
+## V2 batch queue (commercially licensed videos only)
+
+Copy [`examples/manifest-example.csv`](examples/manifest-example.csv) to your local drive and replace example values. Open **08 Batch Queue**, import CSV or JSON, select output directory, and run queued local renders. Invalid/missing permissions are rejected before importing. Successes create `.mp4` and `.provenance.json`. The system deduplicates identical jobs, supports manual retry and an explicit interrupted-render recovery action. No cloud uploads happen in this queue.
+
+**Release validation:** Build CI validates the true FFmpeg/FFprobe binary, then runs the executable with `--self-test`, which exits without the GUI. The portable `.exe` is not claimed to work until the current GitHub Actions run succeeds.
 
 ## Safe workflow
 
@@ -57,7 +65,7 @@ Some platforms require additional provider settings, consent, creator visibility
 - All video manipulation is offline FFmpeg; only downloading, Gemini calls and Postiz publishing need network.
 - API keys are never stored in SQLite; do not upload grants or personal media to GitHub.
 - SQLite and working files default to `%APPDATA%/Douyinhehe` on Windows.
-- Check [ARCHITECTURE](docs/ARCHITECTURE.md), [ROADMAP](docs/ROADMAP.md) and [THIRD PARTY](docs/THIRD_PARTY.md).
+- Check [ARCHITECTURE](docs/ARCHITECTURE.md), [V2_NOTES](docs/V2_NOTES.md), [SKILLS](docs/SKILLS.md), [ROADMAP](docs/ROADMAP.md) and [THIRD PARTY](docs/THIRD_PARTY.md).
 - Run `python -m pytest -q` for tests.
 
 ## Scope & quality policy
