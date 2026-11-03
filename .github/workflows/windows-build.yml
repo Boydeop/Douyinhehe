@@ -33,9 +33,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path vendor/bin | Out-Null
           Copy-Item -LiteralPath $ffmpeg -Destination vendor/bin/ffmpeg.exe -Force
           Copy-Item -LiteralPath $real.FullName -Destination vendor/bin/ffprobe.exe -Force
-          & ./vendor/bin/ffprobe.exe -version | Select-Object -First 1
+          & ./vendor/bin/ffprobe.exe -version | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'Copied ffprobe is not runnable' }
-          & ./vendor/bin/ffmpeg.exe -version | Select-Object -First 1
+          & ./vendor/bin/ffmpeg.exe -version | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'Copied ffmpeg is not runnable' }
       - name: Build EXE with PyInstaller
         shell: pwsh
@@ -53,9 +53,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./dist/DouyinhehePro/bin/ffprobe.exe -version | Select-Object -First 1
+          & ./dist/DouyinhehePro/bin/ffprobe.exe -version | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'ffprobe smoke test failed' }
-          & ./dist/DouyinhehePro/bin/ffmpeg.exe -version | Select-Object -First 1
+          & ./dist/DouyinhehePro/bin/ffmpeg.exe -version | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'ffmpeg smoke test failed' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
