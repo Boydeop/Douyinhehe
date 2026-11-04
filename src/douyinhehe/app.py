@@ -21,7 +21,7 @@ from .batch import create_local_manifest, enqueue_manifest, run_queue
 from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
-from .downloader import download_authorized, parse_douyin_urls
+from .downloader import download_authorized, parse_douyin_urls, is_channel_url
 from .diagnostics import downloader_status, update_ytdlp
 from .subtitle_qc import audit_srt, preview_five_seconds
 from .glossary import load_glossary, save_glossary, validate_glossary
@@ -32,6 +32,12 @@ from .tts_adapters import get_tts_engine
 from .media import EditPreset, find_binary, render_video
 from .publisher import PostizClient
 from .subtitles import transcribe_to_srt, translate_srt, text_to_voice
+from .studio_ui import MaskCanvas
+from .studio_engine import MaskRegion, suggest_chinese_regions, extract_preview_frame
+from PySide6.QtWidgets import QListWidget, QStackedWidget, QSlider, QFrame
+from dataclasses import replace
+import hashlib
+import tempfile
 
 
 class WorkerSignals(QObject):
@@ -76,62 +82,94 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Pro 2.1 · Affiliate Video Studio")
-        self.setMinimumSize(1050, 760)
+        self.setWindowTitle("Douyinhehe Studio 3.0 · Affiliate Video Editor")
+        self.setMinimumSize(1160, 780)
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
         self._workers = set()
+        self._studio_frame = None
         root = QWidget()
-        outer = QVBoxLayout(root)
-        heading = QLabel("DOUYINHEHE  /  AFFILIATE STUDIO")
+        outer = QHBoxLayout(root)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(210)
+        navbox = QVBoxLayout(sidebar)
+        navbox.setContentsMargins(12, 20, 12, 15)
+        brand = QLabel("▶  DOUYINHEHE")
+        brand.setObjectName("brand")
+        navbox.addWidget(brand)
+        navbox.addWidget(QLabel("AFFILIATE VIDEO STUDIO"))
+        self.nav = QListWidget()
+        self.nav.setObjectName("navigation")
+        self.nav.setSpacing(3)
+        navbox.addWidget(self.nav, 1)
+        navbox.addWidget(QLabel("Chỉ video có quyền sử dụng"))
+        outer.addWidget(sidebar)
+        workspace = QWidget()
+        body = QVBoxLayout(workspace)
+        body.setContentsMargins(20, 16, 20, 10)
+        heading = QLabel("Thư viện · Studio · Xuất bản")
         heading.setObjectName("heading")
-        outer.addWidget(heading)
-        intro = QLabel("Tìm nguồn · Tải video được cấp phép · Việt hóa · Dựng video · Affiliate · Lên lịch")
+        body.addWidget(heading)
+        intro = QLabel("Douyinhehe 3.0  |  Tải hàng loạt  |  Biên tập bằng FFmpeg")
         intro.setObjectName("subheading")
-        outer.addWidget(intro)
-        self.tabs = QTabWidget()
-        outer.addWidget(self.tabs, 1)
+        body.addWidget(intro)
+        self.pages = QStackedWidget()
+        body.addWidget(self.pages, 1)
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
-        self.logs.setMaximumHeight(115)
-        self.logs.setPlaceholderText("Nhật ký tác vụ (không ghi API key)")
-        outer.addWidget(self.logs)
+        self.logs.setMaximumHeight(85)
+        body.addWidget(self.logs)
+        outer.addWidget(workspace, 1)
         self.setCentralWidget(root)
         for title, builder in [
-            ("01  Khám phá", self.build_research),
-            ("02  Tải Douyin", self.build_download),
-            ("03  Batch Editor", self.build_editor),
-            ("04  Dịch & giọng", self.build_translation),
-            ("05  Affiliate", self.build_affiliate),
-            ("06  Lên lịch", self.build_publish),
-            ("07  Cài đặt", self.build_settings),
-            ("08  Batch Queue", self.build_batch_queue),
-            ("09  Kiểm tra video", self.build_delivery_check),
+            ("Khám phá", self.build_research),
+            ("Tải Douyin", self.build_download),
+            ("Studio chỉnh sửa", self.build_editor),
+            ("Phụ đề · Dịch", self.build_translation),
+            ("Affiliate", self.build_affiliate),
+            ("Lên lịch", self.build_publish),
+            ("Cài đặt", self.build_settings),
+            ("Hàng đợi batch", self.build_batch_queue),
+            ("Kiểm tra video", self.build_delivery_check),
         ]:
             widget = QWidget()
             layout = QVBoxLayout(widget)
+            layout.setContentsMargins(8, 10, 10, 10)
             builder(layout)
             layout.addStretch()
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(widget)
-            self.tabs.addTab(scroll, title)
+            self.pages.addWidget(scroll)
+            self.nav.addItem(title)
+        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav.setCurrentRow(2)
         self.setStyleSheet("""
-            QMainWindow, QWidget { background: #101827; color: #edf4ff; font-family: 'Segoe UI'; font-size: 12px; }
-            QLabel#heading { font-weight: 800; font-size: 23px; color: #f7ffff; margin-top: 8px; }
-            QLabel#subheading { color: #90a9bc; margin-bottom: 6px; }
-            QTabBar::tab { color: #b3c9de; padding: 11px 13px; background: #192538; margin: 2px; border-radius: 6px; }
-            QTabBar::tab:selected { background: #1d6075; color: white; }
-            QGroupBox { border: 1px solid #334960; border-radius: 12px; margin-top: 17px; padding: 12px; font-weight: 700; }
-            QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: #73d3dc; }
+            QMainWindow, QWidget { background: #0f0f0f; color: #f1f1f1; font-family: 'Segoe UI'; font-size: 12px; }
+            QFrame#sidebar, QListWidget#navigation { background: #171717; border: none; }
+            QLabel#brand { font-size: 19px; font-weight: 800; color: #ff3333; padding: 5px 0 16px 0; }
+            QLabel#heading { font-size: 22px; font-weight: 700; padding: 3px 0; }
+            QLabel#subheading { font-size: 11px; color: #aaaaaa; padding-bottom: 8px; }
+            QListWidget#navigation::item { padding: 12px 12px; margin: 2px 0; border-radius: 8px; color: #cccccc; }
+            QListWidget#navigation::item:selected { background: #3a2020; color: #ffffff; border-left: 3px solid #ff3333; }
+            QListWidget#navigation::item:hover { background: #292929; }
+            QGroupBox { border: 1px solid #343434; border-radius: 12px; margin-top: 18px; padding: 12px; font-weight: 600; background: #1a1a1a; }
+            QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 7px; color: #f1f1f1; }
             QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
-                background: #18283c; border: 1px solid #3b5872; color: white; border-radius: 7px; padding: 8px;
+                background: #222; border: 1px solid #414141; border-radius: 8px; padding: 9px; color: #f1f1f1;
             }
-            QPushButton { background: #137b90; color: white; border-radius: 8px; padding: 10px; font-weight: 700; }
-            QPushButton:hover { background: #1a96aa; }
-            QPushButton:disabled { background: #3b5261; }
-            QCheckBox { padding: 7px; }
+            QLineEdit:focus, QPlainTextEdit:focus { border-color: #ff4444; }
+            QPushButton { background: #373737; color: white; border: 1px solid #4a4a4a; border-radius: 18px; padding: 10px 15px; font-weight: 600; }
+            QPushButton:hover { background: #505050; }
+            QPushButton:pressed { background: #bb1f1f; }
+            QPushButton:disabled { background: #242424; color: #6f6f6f; }
+            QCheckBox { padding: 6px; }
             QScrollArea { border: none; }
+            QSlider::groove:horizontal { height: 6px; background: #474747; border-radius: 3px; }
+            QSlider::handle:horizontal { background: #ff4545; width: 14px; margin: -5px 0; border-radius: 7px; }
         """)
         self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
 
@@ -218,40 +256,37 @@ class MainWindow(QMainWindow):
 
     def refresh_sources(self):
         self.research_saved.setPlainText("\n".join(
-            f"#{v['id']} · {v['creator']} · {v['niche'] or 'Chưa chọn ngách'} · {v['url']}"
+            f"#{v['id']} · {v['niche'] or 'Chưa chọn ngách'} · {v['url']}"
             for v in self.store.sources()) or "Chưa lưu nguồn")
 
     def build_download(self, layout):
-        panel = group("Tải Douyin hàng loạt · video có giấy phép")
-        self.download_urls = paragraph("Dán link Douyin (mỗi dòng 1 link hoặc nguyên nội dung chia sẻ)", 120)
-        panel.layout().addRow("Nguồn video", self.download_urls)
-        self.down_creator = field("Tác giả/chủ sở hữu nội dung")
-        self.down_evidence = field("Mã hợp đồng hoặc tham chiếu bằng chứng cấp phép")
-        self.down_evidence_file = field("File bằng chứng (tùy chọn, tính SHA-256)")
-        self.down_expiry = field("Hết hạn giấy phép YYYY-MM-DD (bỏ trống nếu không có)")
-        self.down_folder = field("Thư mục lưu file", str(user_data_dir() / "downloads"))
-        folder_btn = QPushButton("Chọn thư mục")
-        folder_btn.clicked.connect(lambda: self._folder(self.down_folder))
+        panel = group("Douyin · Tải nhiều video hoặc nguyên kênh")
+        self.download_urls = paragraph("Dán link video/kênh Douyin, mỗi dòng một URL", 135)
+        self.down_folder = field("Thư mục lưu video", str(user_data_dir() / "downloads"))
+        browse = QPushButton("Chọn thư mục tải")
+        browse.clicked.connect(lambda: self._folder(self.down_folder))
         self.down_niche = QComboBox()
         self.down_niche.addItems(KEYWORDS.keys())
+        self.down_mode = QComboBox()
+        self.down_mode.addItem("Nhiều link video / danh sách", "batch")
+        self.down_mode.addItem("Toàn bộ kênh Douyin", "channel")
         self.down_limit = QSpinBox()
-        self.down_limit.setRange(1, 200)
-        self.down_limit.setValue(30)
-        self.check_commercial = QCheckBox("Tôi có quyền khai thác thương mại / affiliate")
-        self.check_derivative = QCheckBox("Tôi có quyền sửa, tái đăng và phân phối theo giấy phép")
-        panel.layout().addRow("Tác giả", self.down_creator)
-        panel.layout().addRow("Bằng chứng", self.down_evidence)
-        panel.layout().addRow("File bằng chứng", self.down_evidence_file)
-        panel.layout().addRow("Hết hạn", self.down_expiry)
-        panel.layout().addRow("Ngách", self.down_niche)
-        panel.layout().addRow("Thư mục", self.down_folder)
-        panel.layout().addRow(folder_btn)
-        panel.layout().addRow("Tối đa/link", self.down_limit)
-        panel.layout().addRow(self.check_commercial)
-        panel.layout().addRow(self.check_derivative)
-        go = QPushButton("TẢI HÀNG LOẠT (chỉ nội dung được cấp phép)")
-        go.clicked.connect(self.on_download)
-        panel.layout().addRow(go)
+        self.down_limit.setRange(0, 5000)
+        self.down_limit.setSpecialValueText("0 = toàn kênh (không giới hạn)")
+        self.down_limit.setValue(50)
+        self.check_commercial = QCheckBox("Tôi có quyền khai thác thương mại các video này")
+        self.check_derivative = QCheckBox("Tôi có quyền chỉnh sửa và đăng lại các video này")
+        for name, widget in (("Nguồn", self.download_urls), ("Chế độ", self.down_mode),
+                             ("Tối đa/kênh", self.down_limit), ("Ngách", self.down_niche),
+                             ("Thư mục", self.down_folder), ("", browse),
+                             ("", self.check_commercial), ("", self.check_derivative)):
+            panel.layout().addRow(name, widget)
+        panel.layout().addRow(QLabel(
+            "Không yêu cầu tên tác giả, file hợp đồng hoặc hạn giấy phép.\\n"
+            "Bạn vẫn cần tuân thủ quyền sử dụng và ghi nguồn theo thỏa thuận."))
+        button = QPushButton("TẢI DANH SÁCH / NGUYÊN KÊNH")
+        button.clicked.connect(self.on_download)
+        panel.layout().addRow(button)
         layout.addWidget(panel)
 
     def _folder(self, entry):
@@ -262,43 +297,84 @@ class MainWindow(QMainWindow):
     def on_download(self):
         try:
             urls = parse_douyin_urls(self.download_urls.toPlainText())
-            grants = [LicenseGrant(url, self.down_creator.text().strip(), self.down_evidence.text().strip(),
-                                  self.check_commercial.isChecked(), self.check_derivative.isChecked(),
-                                  expires_on=self.down_expiry.text().strip(),
-                                  evidence_file=self.down_evidence_file.text().strip()) for url in urls]
+            grants = [LicenseGrant(url, "", "", self.check_commercial.isChecked(),
+                                   self.check_derivative.isChecked()) for url in urls]
             for grant in grants:
                 grant.validate()
             folder = Path(self.down_folder.text())
             limit = self.down_limit.value()
+            mode = self.down_mode.currentData()
             niche = self.down_niche.currentText()
+            if mode == "channel" and any(not is_channel_url(url) for url in urls):
+                raise ValueError("Nguyên kênh yêu cầu link Douyin dạng https://www.douyin.com/user/...")
+            if mode == "batch" and not limit:
+                raise ValueError("Chế độ tải nhiều link cần giới hạn video lớn hơn 0.")
         except Exception as exc:
             return self.alert(exc)
-
+        if mode == "channel" and limit == 0:
+            response = QMessageBox.question(
+                self, "Tải nguyên kênh không giới hạn",
+                "Có thể có nhiều video và tốn dung lượng ổ cứng. Bạn muốn tiếp tục?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if response != QMessageBox.StandardButton.Yes:
+                return
         def task(report):
             count = 0
             for grant in grants:
                 self.store.save_source(grant, niche)
-                files = download_authorized(grant.original_url, folder, grant, self.store, limit, report)
-                count += len(files)
+                count += len(download_authorized(grant.original_url, folder, grant, self.store,
+                                                  limit, report, mode=mode))
             return count
-        self.job("Tải Douyin", task, lambda n: (self.log(f"Đã tải {n} file"), self.refresh_sources()))
+        self.job("Tải Douyin", task, lambda n: (self.log(f"Đã tải {n} video mới"), self.refresh_sources()))
 
     def build_editor(self, layout):
-        panel = group("Chỉnh sửa hàng loạt bằng FFmpeg (offline)")
-        self.edit_files = paragraph("Mỗi dòng là đường dẫn video MP4/MOV trong máy", 115)
-        files_btn = QPushButton("Chọn nhiều video")
+        studio = QWidget()
+        columns = QHBoxLayout(studio)
+        columns.setContentsMargins(0, 0, 0, 0)
+        preview_side = QWidget()
+        preview_col = QVBoxLayout(preview_side)
+        preview_col.addWidget(QLabel("KHUNG XEM TRƯỚC   ·   Kéo chuột để khoanh phụ đề"))
+        self.studio_canvas = MaskCanvas()
+        preview_col.addWidget(self.studio_canvas, 1)
+        self.edit_seek = QSlider(Qt.Orientation.Horizontal)
+        self.edit_seek.setRange(0, 240)
+        self.edit_seek.setValue(1)
+        preview_col.addWidget(self.edit_seek)
+        show_frame = QPushButton("▶ Xem khung tại vị trí thanh thời gian")
+        show_frame.clicked.connect(self.on_editor_preview)
+        preview_col.addWidget(show_frame)
+        auto = QPushButton("Gợi ý vùng phụ đề Trung")
+        auto.clicked.connect(self.on_editor_auto)
+        preview_col.addWidget(auto)
+        clear = QPushButton("Xóa vùng che · chuột phải hoàn tác")
+        clear.clicked.connect(self.studio_canvas.clear_regions)
+        preview_col.addWidget(clear)
+        columns.addWidget(preview_side, 2)
+
+        panel = group("Chỉnh sửa hàng loạt · FFmpeg")
+        self.edit_files = paragraph("Chọn video MP4/MOV hoặc dán đường dẫn, mỗi dòng một file", 95)
+        files_btn = QPushButton("Thêm nhiều video")
         files_btn.clicked.connect(self.choose_edit_files)
         self.edit_out = field("Thư mục xuất", str(user_data_dir() / "exports"))
         out_btn = QPushButton("Chọn thư mục xuất")
         out_btn.clicked.connect(lambda: self._folder(self.edit_out))
-        self.edit_creator = field("Tên tác giả gốc để ghi nguồn")
-        self.edit_url = field("URL Douyin gốc (hiện trong metadata)")
-        self.edit_evidence = field("Bằng chứng có quyền chỉnh sửa và dùng cho affiliate")
-        self.edit_expiry = field("Hết hạn giấy phép YYYY-MM-DD (tùy chọn)")
-        self.edit_evidence_file = field("File bằng chứng cấp phép (tùy chọn)")
-        self.edit_authorized = QCheckBox("Xác nhận video đã được cấp quyền biên tập và sử dụng thương mại")
+        self.edit_url = field("URL Douyin gốc để ghi trong metadata (tùy chọn)")
+        self.edit_authorized = QCheckBox("Tôi có quyền sử dụng thương mại và chỉnh sửa các video")
         self.edit_fit = QComboBox()
         self.edit_fit.addItems(["crop", "pad", "blur"])
+        self.edit_mask_mode = QComboBox()
+        self.edit_mask_mode.addItem("Làm mờ vùng đã chọn", "blur")
+        self.edit_mask_mode.addItem("Che kín vùng đã chọn", "solid")
+        self.edit_auto_each = QCheckBox("Tự đề xuất vùng chữ cho từng video (cần kiểm tra kết quả)")
+        self.edit_trim_start = QDoubleSpinBox()
+        self.edit_trim_start.setRange(0, 36000)
+        self.edit_trim_start.setSuffix(" giây")
+        self.edit_trim_start.setSingleStep(.5)
+        self.edit_trim_end = QDoubleSpinBox()
+        self.edit_trim_end.setRange(0, 36000)
+        self.edit_trim_end.setSuffix(" giây")
+        self.edit_trim_end.setSingleStep(.5)
+        self.edit_trim_end.setSpecialValueText("Đến cuối")
         self.edit_bright = QDoubleSpinBox()
         self.edit_bright.setRange(-.5, .5)
         self.edit_bright.setSingleStep(.05)
@@ -310,7 +386,7 @@ class MainWindow(QMainWindow):
         self.edit_saturation.setRange(0, 2)
         self.edit_saturation.setSingleStep(.1)
         self.edit_saturation.setValue(1)
-        self.edit_cta = field("Ví dụ: Link sản phẩm nằm ở trang cá nhân")
+        self.edit_cta = field("Ví dụ: Link sản phẩm có ở trang cá nhân")
         self.cta_name = field("Tên preset CTA", "Gia dụng")
         self.cta_position = QComboBox()
         self.cta_position.addItems(["bottom", "center"])
@@ -323,87 +399,130 @@ class MainWindow(QMainWindow):
         save_cta.clicked.connect(self.on_save_cta)
         load_cta = QPushButton("Nạp preset CTA")
         load_cta.clicked.connect(self.on_load_cta)
-        self.edit_srt = field("Phụ đề .srt tùy chọn (đã dịch sang Việt)")
+        self.edit_srt = field("Phụ đề .srt tiếng Việt (tùy chọn)")
         srt_btn = QPushButton("Chọn SRT")
         srt_btn.clicked.connect(lambda: self.chooser(self.edit_srt, filter="SRT (*.srt)"))
-        self.edit_narration = field("File giọng đọc .wav/.mp3 tùy chọn (thay audio gốc)")
+        self.edit_narration = field("Audio lồng tiếng tùy chọn")
         narration_btn = QPushButton("Chọn audio")
         narration_btn.clicked.connect(lambda: self.chooser(self.edit_narration, filter="Audio (*.wav *.mp3)"))
-        for label, value in (("Video", self.edit_files), ("", files_btn), ("Xuất", self.edit_out),
-                             ("", out_btn), ("Tác giả", self.edit_creator), ("URL nguồn", self.edit_url),
-                             ("Bằng chứng", self.edit_evidence), ("File bằng chứng", self.edit_evidence_file),
-                             ("Hết hạn", self.edit_expiry), ("", self.edit_authorized),
-                             ("Kiểu khung 9:16", self.edit_fit), ("Độ sáng", self.edit_bright),
+        for label, value in (("Video", self.edit_files), ("", files_btn), ("Thư mục xuất", self.edit_out),
+                             ("", out_btn), ("URL nguồn", self.edit_url), ("", self.edit_authorized),
+                             ("Khung 9:16", self.edit_fit), ("Che chữ", self.edit_mask_mode),
+                             ("", self.edit_auto_each), ("Cắt từ", self.edit_trim_start),
+                             ("Cắt đến", self.edit_trim_end), ("Độ sáng", self.edit_bright),
                              ("Tương phản", self.edit_contrast), ("Bão hòa", self.edit_saturation),
                              ("CTA", self.edit_cta), ("Preset CTA", self.cta_name),
                              ("Vị trí CTA", self.cta_position), ("Màu nền", self.cta_background),
                              ("Màu chữ", self.cta_foreground), ("Cỡ chữ", self.cta_font_size),
-                             ("", save_cta), ("", load_cta), ("Phụ đề", self.edit_srt), ("", srt_btn),
-                             ("Thuyết minh", self.edit_narration), ("", narration_btn)):
+                             ("", save_cta), ("", load_cta), ("Phụ đề", self.edit_srt),
+                             ("", srt_btn), ("Thuyết minh", self.edit_narration), ("", narration_btn)):
             panel.layout().addRow(label, value)
-        subtitle_check = QPushButton("KIỂM TRA PHỤ ĐỀ · tốc độ đọc / số dòng")
-        subtitle_check.clicked.connect(self.on_check_srt)
-        preview = QPushButton("XEM TRƯỚC 5 GIÂY CÓ PHỤ ĐỀ")
-        preview.clicked.connect(self.on_subtitle_preview)
-        panel.layout().addRow(subtitle_check)
-        panel.layout().addRow(preview)
+        check_sub = QPushButton("Kiểm tra phụ đề · tốc độ đọc")
+        check_sub.clicked.connect(self.on_check_srt)
+        preview_sub = QPushButton("Xem thử 5 giây có phụ đề")
+        preview_sub.clicked.connect(self.on_subtitle_preview)
         go = QPushButton("RENDER HÀNG LOẠT 1080 × 1920 MP4")
         go.clicked.connect(self.on_render)
-        panel.layout().addRow(go)
-        layout.addWidget(panel)
+        for btn in (check_sub, preview_sub, go):
+            panel.layout().addRow(btn)
+        columns.addWidget(panel, 3)
+        layout.addWidget(studio)
 
     def choose_edit_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Chọn nhiều video", "", "Video (*.mp4 *.mov)")
         if files:
             self.edit_files.setPlainText("\n".join(files))
+            self.on_editor_preview()
+
+    def _editor_preset(self):
+        if not self.edit_authorized.isChecked():
+            raise PermissionError("Bạn cần xác nhận quyền biên tập và sử dụng thương mại.")
+        masks = tuple(replace(r, mode=self.edit_mask_mode.currentData()) for r in self.studio_canvas.regions())
+        end = self.edit_trim_end.value() or None
+        preset = EditPreset(fit=self.edit_fit.currentText(), brightness=self.edit_bright.value(),
+                            contrast=self.edit_contrast.value(), saturation=self.edit_saturation.value(),
+                            creator="", original_url=self.edit_url.text().strip(), cta=self.edit_cta.text(),
+                            masks=masks, trim_start=self.edit_trim_start.value(), trim_end=end,
+                            cta_position=self.cta_position.currentText(),
+                            cta_background=self.cta_background.text(),
+                            cta_foreground=self.cta_foreground.text(), cta_font_size=self.cta_font_size.value(),
+                            subtitle=Path(self.edit_srt.text()) if self.edit_srt.text() else None,
+                            narration=Path(self.edit_narration.text()) if self.edit_narration.text() else None)
+        preset.validate()
+        return preset
 
     def on_render(self):
         try:
-            files = [Path(x.strip()) for x in self.edit_files.toPlainText().splitlines() if x.strip()]
-            if not files or not all(f.is_file() for f in files):
-                raise ValueError("Đường dẫn video nguồn phải tồn tại.")
-            if not self.edit_authorized.isChecked() or not self.edit_evidence.text().strip():
-                raise PermissionError("Chưa xác nhận quyền sử dụng thương mại và bằng chứng cấp phép.")
-            LicenseGrant(self.edit_url.text().strip(), self.edit_creator.text().strip(),
-                         self.edit_evidence.text().strip(), True, True,
-                         expires_on=self.edit_expiry.text().strip(),
-                         evidence_file=self.edit_evidence_file.text().strip()).validate()
-            preset = EditPreset(fit=self.edit_fit.currentText(), brightness=self.edit_bright.value(),
-                                contrast=self.edit_contrast.value(), saturation=self.edit_saturation.value(),
-                                creator=self.edit_creator.text().strip(), original_url=self.edit_url.text().strip(),
-                                cta=self.edit_cta.text(),
-                                cta_position=self.cta_position.currentText(),
-                                cta_background=self.cta_background.text(),
-                                cta_foreground=self.cta_foreground.text(),
-                                cta_font_size=self.cta_font_size.value(),
-                                subtitle=Path(self.edit_srt.text()) if self.edit_srt.text() else None,
-                                narration=Path(self.edit_narration.text()) if self.edit_narration.text() else None)
-            preset.validate()
+            files = [Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip()]
+            if not files or not all(v.is_file() for v in files):
+                raise ValueError("Cần chọn file video có thật.")
+            preset = self._editor_preset()
             if preset.subtitle:
                 issues = audit_srt(preset.subtitle)
-                if any(issue.severity == "error" for issue in issues):
-                    raise ValueError("Phụ đề bị lỗi timecode. Hãy sửa trước khi render.")
+                if any(x.severity == "error" for x in issues):
+                    raise ValueError("Phụ đề có lỗi timecode, sửa trước khi render.")
                 if issues:
-                    msg = "Có %d cảnh báo phụ đề, vẫn tiếp tục render?\n%s" % (
-                        len(issues), "\n".join(x.detail for x in issues[:5]))
-                    answer = QMessageBox.question(self, "Kiểm tra phụ đề", msg,
-                                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                    if answer != QMessageBox.StandardButton.Yes:
+                    confirm = QMessageBox.question(self, "Cảnh báo phụ đề",
+                        f"Có {len(issues)} cảnh báo phụ đề. Vẫn tiếp tục render?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                    if confirm != QMessageBox.StandardButton.Yes:
                         return
             output = Path(self.edit_out.text())
+            auto_each = self.edit_auto_each.isChecked()
         except Exception as exc:
             return self.alert(exc)
-
+        if auto_each:
+            confirm = QMessageBox.question(self, "Kiểm tra chế độ tự động",
+                "Nếu RapidOCR chưa được cài, ứng dụng chỉ làm mờ vùng ước lượng phía dưới khung hình. "
+                "Điều này có thể che nhầm nội dung. Hãy kiểm tra kết quả sau khi render. Tiếp tục?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
         def task(report):
-            result = []
-            for i, path in enumerate(files, 1):
-                report(f"[{i}/{len(files)}] {path.name}")
-                dest = output / f"{path.stem}_douyinhehe.mp4"
-                if dest.resolve() == path.resolve():
-                    raise ValueError("Đầu ra không được trùng đầu vào.")
-                result.append(render_video(path, dest, preset, report))
-            return result
-        self.job("Render video", task, lambda result: self.log(f"Đã xuất {len(result)} video vào {output}"))
+            outputs = []
+            for index, video in enumerate(files, 1):
+                report(f"[{index}/{len(files)}] Render {video.name}")
+                active = preset
+                if auto_each:
+                    with tempfile.TemporaryDirectory(prefix="douyinhehe-mask-") as temp:
+                        frame = extract_preview_frame(video, Path(temp) / "preview.png",
+                                                      seconds=preset.trim_start + .5, fit=preset.fit)
+                        regions, reason = suggest_chinese_regions(frame)
+                        report(reason)
+                        active = replace(preset, masks=regions)
+                dest = output / f"{video.stem}_douyinhehe.mp4"
+                if dest.resolve() == video.resolve():
+                    raise ValueError("Không ghi đè file nguồn.")
+                outputs.append(render_video(video, dest, active, report))
+            return outputs
+        self.job("Render hàng loạt", task, lambda result: self.log(f"Đã xuất {len(result)} video vào {output}"))
+
+    def on_editor_preview(self):
+        try:
+            video = next(Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip())
+            if not video.is_file():
+                raise FileNotFoundError(video)
+            second = self.edit_seek.value()
+            fit = self.edit_fit.currentText()
+            digest = hashlib.sha256(str(video).encode()).hexdigest()[:12]
+            target = user_data_dir() / "previews" / f"studio-{digest}-{second}.png"
+        except Exception as exc:
+            return self.alert(exc)
+        def done(frame):
+            try:
+                self.studio_canvas.set_image(str(frame))
+                self._studio_frame = Path(frame)
+            except Exception as exc:
+                self.alert(exc)
+        self.job("Xem khung video", lambda report: extract_preview_frame(video, target,
+                 seconds=float(second), fit=fit), done)
+
+    def on_editor_auto(self):
+        if not self._studio_frame:
+            return self.alert("Hãy nạp khung hình trước khi gợi ý che phụ đề.")
+        self.job("Gợi ý vùng chữ Trung", lambda report: suggest_chinese_regions(self._studio_frame),
+                 lambda result: (self.studio_canvas.set_regions(result[0]),
+                                 QMessageBox.information(self, "Gợi ý vùng phụ đề", result[1])))
 
     def on_save_cta(self):
         try:
@@ -746,8 +865,21 @@ class MainWindow(QMainWindow):
         logs_button = QPushButton("XUẤT LOG ĐÃ CHE API KEY")
         logs_button.clicked.connect(self.on_export_logs)
         status.layout().addRow(logs_button)
+        private = QPushButton("XÓA dữ liệu tác giả / bằng chứng cũ trong SQLite")
+        private.clicked.connect(self.on_scrub_private)
+        status.layout().addRow(private)
         status.layout().addRow(QLabel("Thư mục dữ liệu: " + str(user_data_dir())))
         layout.addWidget(status)
+
+    def on_scrub_private(self):
+        confirm = QMessageBox.question(self, "Xóa dữ liệu riêng tư cũ",
+             "Xóa vĩnh viễn thông tin tác giả, hợp đồng và ngày hết hạn lưu trong SQLite?\n"
+             "Không xóa các video hay file JSON đã xuất ra từ các phiên bản cũ.",
+             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.store.scrub_private_metadata()
+            self.log("Đã xóa metadata riêng tư cũ khỏi SQLite.")
+            self.refresh_sources()
 
     def on_downloader_check(self):
         status = downloader_status()
@@ -775,45 +907,36 @@ class MainWindow(QMainWindow):
             self.alert(exc)
 
     def build_batch_queue(self, layout):
-        panel = group("Batch 2.0 · Danh sách CSV/JSON · Kiểm soát nguồn cho từng video")
-        panel.layout().addRow(QLabel(
-            "Bắt buộc: file, original_url, creator, evidence, commercial=true, derivative=true.\n"
-            "Có thể thêm: niche, platforms, fit, cta, subtitle, brightness, contrast, saturation."
-        ))
-        self.batch_manifest = field("Đường dẫn CSV/JSON có giấy phép riêng cho mỗi video")
-        self.local_folder = field("Thư mục video tự quay / đã có quyền sử dụng")
-        self.local_creator = field("Chủ sở hữu video local")
-        self.local_evidence = field("Bằng chứng quyền dùng video local")
-        self.local_expiry = field("Hết hạn YYYY-MM-DD (tùy chọn)")
-        self.local_rights = QCheckBox("Tôi xác nhận quyền thương mại và chỉnh sửa các file video local")
+        panel = group("Hàng đợi hàng loạt · CSV/JSON hoặc video tự quay")
+        panel.layout().addRow(QLabel("CSV tối thiểu: file, original_url, commercial, derivative.\n"
+                                    "Không yêu cầu tác giả, hợp đồng, ngày hết hạn."))
+        self.batch_manifest = field("Đường dẫn CSV/JSON")
+        self.local_folder = field("Thư mục video local đã có quyền sử dụng")
+        self.local_rights = QCheckBox("Tôi có quyền chỉnh sửa và khai thác thương mại những video này")
         browse = QPushButton("Chọn manifest CSV/JSON")
-        browse.clicked.connect(lambda: self.chooser(
-            self.batch_manifest, filter="Manifests (*.csv *.json);;All files (*)"))
-        self.batch_out = field("Thư mục xuất video và bản ghi nguồn", str(user_data_dir() / "exports"))
-        folder = QPushButton("Chọn thư mục xuất")
-        folder.clicked.connect(lambda: self._folder(self.batch_out))
-        for key, w in (("Manifest", self.batch_manifest), ("", browse),
-                       ("Thư mục local", self.local_folder), ("Tác giả local", self.local_creator),
-                       ("Bằng chứng local", self.local_evidence), ("Hết hạn", self.local_expiry),
-                       ("", self.local_rights),
-                       ("Output", self.batch_out), ("", folder)):
-            panel.layout().addRow(key, w)
-        make_local = QPushButton("TẠO MANIFEST VIDEO LOCAL")
-        make_local.clicked.connect(self.on_local_manifest)
-        panel.layout().addRow(make_local)
-        enqueue = QPushButton("THÊM VÀO HÀNG ĐỢI (loại trùng)")
-        enqueue.clicked.connect(self.on_enqueue_manifest)
-        process = QPushButton("CHẠY HÀNG ĐỢI · không ghi đè file hợp lệ khi thất bại")
-        process.clicked.connect(self.on_batch_run)
-        retry = QPushButton("Thử lại các tác vụ lỗi")
-        retry.clicked.connect(self.on_batch_retry)
-        recovery = QPushButton("Khôi phục tác vụ bị ngắt sau khi thoát ứng dụng")
-        recovery.clicked.connect(self.on_batch_recover)
-        refresh = QPushButton("Làm mới danh sách")
-        refresh.clicked.connect(self.refresh_batch)
-        for btn in (enqueue, process, retry, recovery, refresh):
-            panel.layout().addRow(btn)
-        self.batch_view = paragraph("Hàng đợi trống", 240)
+        browse.clicked.connect(lambda: self.chooser(self.batch_manifest,
+                              filter="Manifest (*.csv *.json);;All files (*)"))
+        self.batch_out = field("Thư mục xuất video", str(user_data_dir() / "exports"))
+        folder_btn = QPushButton("Chọn thư mục xuất")
+        folder_btn.clicked.connect(lambda: self._folder(self.batch_out))
+        for label, w in (("Danh sách", self.batch_manifest), ("", browse),
+                         ("Video local", self.local_folder), ("", self.local_rights),
+                         ("Xuất", self.batch_out), ("", folder_btn)):
+            panel.layout().addRow(label, w)
+        local_btn = QPushButton("TẠO MANIFEST TỪ THƯ MỤC")
+        local_btn.clicked.connect(self.on_local_manifest)
+        panel.layout().addRow(local_btn)
+        for title, callback in (
+            ("THÊM HÀNG ĐỢI (CHỐNG TRÙNG)", self.on_enqueue_manifest),
+            ("CHẠY HÀNG ĐỢI", self.on_batch_run),
+            ("Thử lại các tác vụ lỗi", self.on_batch_retry),
+            ("Khôi phục các tác vụ bị ngắt", self.on_batch_recover),
+            ("Làm mới", self.refresh_batch),
+        ):
+            button = QPushButton(title)
+            button.clicked.connect(callback)
+            panel.layout().addRow(button)
+        self.batch_view = paragraph("Hàng đợi trống", 210)
         self.batch_view.setReadOnly(True)
         panel.layout().addRow(self.batch_view)
         layout.addWidget(panel)
@@ -823,10 +946,7 @@ class MainWindow(QMainWindow):
         try:
             target = user_data_dir() / "imports" / "local-videos.json"
             file = create_local_manifest(Path(self.local_folder.text()), target,
-                                         creator=self.local_creator.text(),
-                                         evidence=self.local_evidence.text(),
-                                         rights_confirmed=self.local_rights.isChecked(),
-                                         expires_on=self.local_expiry.text().strip())
+                                         rights_confirmed=self.local_rights.isChecked())
             self.batch_manifest.setText(str(file))
             self.log("Đã tạo manifest: " + str(file))
         except Exception as exc:

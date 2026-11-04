@@ -10,11 +10,10 @@ def test_source_license_gate(tmp_path):
     grant = LicenseGrant("https://www.douyin.com/video/123", "Creator", "email-permission-42", True, True)
     sid = db.save_source(grant, "Gia dụng", 80)
     assert db.sources()[0]["id"] == sid
-    assert db.sources()[0]["creator"] == "Creator"
+    assert "creator" not in db.sources()[0]
     with pytest.raises(ValueError, match="quyền"):
         db.save_source(LicenseGrant(grant.original_url, "Creator", "evidence", True, False))
-    with pytest.raises(ValueError, match="bằng chứng"):
-        db.save_source(LicenseGrant(grant.original_url, "Creator", "", True, True))
+    db.save_source(LicenseGrant(grant.original_url, "", "", True, True))
 
 
 def test_affiliate_data(tmp_path):

@@ -50,8 +50,8 @@ class LicenseGrant:
     evidence_sha256: str = ""
 
     def validate(self) -> None:
-        if not self.original_url.strip() or not self.creator.strip() or not self.evidence.strip():
-            raise ValueError("Cần URL gốc, tác giả và bằng chứng cấp phép.")
+        if not self.original_url.strip():
+            raise ValueError("Cần URL nguồn hoặc mã local:// hợp lệ.")
         if not self.commercial or not self.derivative:
             raise ValueError("Cần quyền khai thác thương mại và quyền chỉnh sửa nội dung.")
         if not any(x.strip() for x in self.platforms.split(",")):
@@ -139,27 +139,40 @@ class Store:
         return conn
 
     def save_source(self, grant: LicenseGrant, niche: str = "", score: float = 0) -> int:
+        """Persist only URL and rights flags, never personal permission materials."""
         grant.validate()
         with self._connect() as conn:
             conn.execute("""
                 INSERT INTO sources(url,creator,evidence,commercial,derivative,platforms,niche,score,created_at,
                                     expires_on,evidence_file,evidence_sha256)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(url) DO UPDATE SET creator=excluded.creator,evidence=excluded.evidence,
-                commercial=excluded.commercial,derivative=excluded.derivative,
-                platforms=excluded.platforms,niche=excluded.niche,score=excluded.score,
-                expires_on=excluded.expires_on,evidence_file=excluded.evidence_file,
-                evidence_sha256=excluded.evidence_sha256
-            """, (grant.original_url.strip(), grant.creator.strip(), grant.evidence.strip(),
-                  int(grant.commercial), int(grant.derivative), grant.platforms,
-                  niche, score, now_utc(), grant.expires_on, grant.evidence_file,
-                  file_sha256(Path(grant.evidence_file)) if grant.evidence_file else ""))
+                VALUES(?,'','',?,?,?,?,?,?,'','','')
+                ON CONFLICT(url) DO UPDATE SET creator='', evidence='', commercial=excluded.commercial,
+                    derivative=excluded.derivative, platforms=excluded.platforms, niche=excluded.niche,
+                    score=excluded.score, expires_on='', evidence_file='', evidence_sha256=''
+            """, (grant.original_url.strip(), int(grant.commercial), int(grant.derivative),
+                  grant.platforms, niche, score, now_utc()))
             row = conn.execute("SELECT id FROM sources WHERE url=?", (grant.original_url.strip(),)).fetchone()
             return int(row[0])
 
     def sources(self) -> list[dict]:
         with self._connect() as conn:
-            return [dict(r) for r in conn.execute("SELECT * FROM sources ORDER BY id DESC")]
+            return [dict(r) for r in conn.execute(
+                "SELECT id,url,commercial,derivative,platforms,niche,score,file_path,created_at "
+                "FROM sources ORDER BY id DESC")]
+
+    def scrub_private_metadata(self) -> None:
+        """An explicit, irreversible action for migrating sensitive legacy local records."""
+        import json
+        with self._connect() as conn:
+            conn.execute("UPDATE sources SET creator='',evidence='',expires_on='',evidence_file='',evidence_sha256=''")
+            for row in conn.execute("SELECT id,payload FROM render_jobs").fetchall():
+                payload = json.loads(row["payload"])
+                for key in ("creator", "evidence", "expires_on", "evidence_file", "evidence_sha256"):
+                    payload.pop(key, None)
+                payload["creator"] = ""
+                payload["evidence"] = ""
+                conn.execute("UPDATE render_jobs SET payload=? WHERE id=?",
+                             (json.dumps(payload, ensure_ascii=False), row["id"]))
 
     def update_download(self, url: str, filename: Path) -> None:
         with self._connect() as conn:

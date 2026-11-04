@@ -32,7 +32,7 @@ def test_rights_expiration_and_evidence_hash(tmp_path):
     grant.validate()
     db = Store(tmp_path / "test.sqlite")
     db.save_source(grant)
-    assert db.sources()[0]["evidence_sha256"] == digest
+    assert "evidence_sha256" not in db.sources()[0]
     evidence.write_bytes(b"modified")
     with pytest.raises(PermissionError, match="SHA-256"):
         grant.validate()
@@ -52,9 +52,8 @@ def test_database_upgrade_adds_license_columns_without_losing_records(tmp_path):
         db.execute("INSERT INTO sources VALUES (1,'old','Creator','proof',1,1,'facebook','decor',0,'','old')")
     store = Store(file)
     rows = store.sources()
-    assert rows[0]["creator"] == "Creator"
-    assert rows[0]["expires_on"] == ""
-    assert rows[0]["evidence_sha256"] == ""
+    assert rows[0]["url"] == "old"
+    assert "creator" not in rows[0]
 
 
 def test_local_import_manifest_expiry_and_queue(tmp_path):

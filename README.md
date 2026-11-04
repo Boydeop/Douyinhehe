@@ -1,14 +1,14 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 2.1.0 engineering preview**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.0.0 development preview (branch only)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Implemented
 
 | Module | Available now | Limitations |
 | --- | --- | --- |
 | Niche research | Chinese keyword collections, manually weighted opportunity score, saved sources | No automated Douyin search API; metrics entered manually |
-| Douyin downloader | Batch input links, profile/playlist cap, progress, local catalog via `yt-dlp` | Douyin changes frequently; public URL access may fail; no anti-bot bypass |
-| Rights & credit | Explicit commercial/editing grant, evidence reference, visible creator overlay, source metadata | User must verify rights to music and third-party material |
+| Douyin downloader | Multiple links and full profile mode, local archive to avoid duplicates | Entire-channel coverage depends on Douyin/yt-dlp; no access bypass |
+| Privacy-first rights confirmation | Confirmation without storing author names/contracts/expiry in new jobs | Old local records can be scrubbed with Settings action; permissions still required |
 | Batch video | 9:16 crop/pad/blur, color grading, CTA, optional SRT, optional voice replacement, MP4 H.264/AAC | Requires FFmpeg with libx264, drawtext and subtitles filter as applicable |
 | Mandarin transcription | Optional `faster-whisper` offline | Model weights downloaded separately on first use; CPU may be slow |
 | Translation | Google Gemini SDK to translate SRT in batches, local cache, manual Free Tier opt-in | API key and actual Free Tier entitlement required; quota errors stop processing |
@@ -30,7 +30,7 @@ pip install -e ".[all,dev]"
 python -m douyinhehe
 ```
 
-**Windows `.exe`:** the portable ZIP now includes the GUI executable, `bin/ffmpeg.exe`, `bin/ffprobe.exe`, and third-party notices, and must pass a frozen `--self-test`. Open [Actions → Build Windows desktop EXE](../../actions/workflows/windows-build.yml), download the `DouyinhehePro-Windows-x64` artifact after a successful run, extract the ZIP and launch `DouyinhehePro.exe`. GitHub Actions must be enabled, and the workflow must succeed before an artifact exists. Its ZIP includes FFmpeg and FFprobe (check `THIRD_PARTY.md`). There is not yet an installer or a published GitHub Release.
+**Windows `.exe`:** the portable ZIP now includes the GUI executable, `bin/ffmpeg.exe`, `bin/ffprobe.exe`, and third-party notices, and must pass a frozen `--self-test`. Open [Actions → Build Windows desktop EXE](../../actions/workflows/windows-build.yml), download the `DouyinhehePro-Windows-x64` artifact after a successful run, extract the ZIP and launch `DouyinhehePro.exe`. GitHub Actions must be enabled, and the workflow must succeed before an artifact exists. Its ZIP includes FFmpeg and FFprobe (check `THIRD_PARTY.md`). Latest stable published Release: v2.1.0. Studio 3.0 is not released yet.
 
 **Build locally:** `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1`. The output executable is `dist/DouyinhehePro/DouyinhehePro.exe`. Local builds require FFmpeg in PATH unless copied to the `bin/` directory.
 
@@ -97,3 +97,18 @@ by the user. Read [release notes](docs/RELEASE_NOTES.md) and
 These are engineering features with CI coverage. Real-world service access,
 authorization, translation accuracy, GUI accessibility and signed installer
 require separate user acceptance testing.
+
+
+## Studio 3.0 (development branch)
+
+The v3 mini-editor has a YouTube-style left navigation, a portrait preview with
+mouse-drawn blur/solid masks, optional RapidOCR Chinese text suggestions, 9:16
+crop/pad/blur, color/CTA/SRT controls, trim bounds, and batch rendering. Without
+optional OCR, the auto button **only proposes a generic lower-third** and shows
+a clear warning; it cannot assert that Chinese text was detected. The app does
+not request author names, evidence files or expiry dates in new workflows.
+
+`morluto/rea` is a reverse-engineering and packaged-executable inspection skill,
+not a video editor. Use REA to audit the compiled EXE, not to process media.
+The editing design draws on `kajisho5/ffmpeg-skill` and `video-editing-skill`.
+Masking licensed video does not override copyright terms or originality rules.

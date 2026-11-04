@@ -15,6 +15,17 @@ _URL = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 _ALLOWED = ("douyin.com", "iesdouyin.com")
 
 
+def is_channel_url(url: str) -> bool:
+    """Channel mode must be explicitly scoped to a Douyin user page."""
+    try:
+        if parse_douyin_urls(url) != [url]:
+            return False
+        return bool(re.fullmatch(r"/user/[^/]+/?", urlsplit(url).path))
+    except ValueError:
+        return False
+
+
+
 def parse_douyin_urls(text: str) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -34,7 +45,8 @@ def parse_douyin_urls(text: str) -> list[str]:
 
 
 def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Store,
-                        max_items: int = 30, progress: Callable[[str], None] | None = None) -> list[Path]:
+                        max_items: int = 30, progress: Callable[[str], None] | None = None,
+                        *, mode: str = "batch") -> list[Path]:
     """Download only with a recorded grant. Network access is performed by yt-dlp.
 
     Douyin frequently changes access controls. Report failures; no captcha or anti-bot bypass.
@@ -44,8 +56,12 @@ def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Stor
     grant.validate()
     if grant.original_url != url:
         raise ValueError("Giấy phép phải gắn với đúng URL tải xuống.")
-    if not 1 <= max_items <= 200:
-        raise ValueError("Số lượng video phải từ 1 đến 200.")
+    if mode not in {"batch", "channel"}:
+        raise ValueError("Chế độ tải không hợp lệ.")
+    if mode == "channel" and not is_channel_url(url):
+        raise ValueError("Nguyên kênh yêu cầu URL có dạng douyin.com/user/...")
+    if not 0 <= max_items <= 5000 or (mode == "batch" and max_items == 0):
+        raise ValueError("Giới hạn tải phải từ 1 đến 5000, hoặc 0 cho toàn kênh.")
     downloader = downloader_status()
     if not downloader.ready:
         raise RuntimeError(downloader.diagnostic)
@@ -63,8 +79,10 @@ def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Stor
                 progress(f"Đã tải: {file.name}")
 
     options = {
-        "outtmpl": str(folder / "%(uploader_id|unknown)s_%(id)s.%(ext)s"),
-        "playlistend": max_items,
+        "outtmpl": str(folder / "%(id)s.%(ext)s"),
+        "download_archive": str(folder / ".douyinhehe-downloaded.txt"),
+        "playlistend": max_items if max_items else None,
+        "noplaylist": mode != "channel",
         "ignoreerrors": False,
         "retries": 2,
         "fragment_retries": 2,
@@ -78,10 +96,14 @@ def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Stor
     try:
         if downloader.executable:
             args = [downloader.executable, "--ignore-config", "--no-progress", "--no-warnings",
-                    "--retries", "2", "--fragment-retries", "2",
-                    "--playlist-end", str(max_items),
-                    "--paths", str(folder), "--output", "%(uploader_id|unknown)s_%(id)s.%(ext)s",
-                    "--print", "after_move:filepath", url]
+                    "--no-overwrites", "--retries", "2", "--fragment-retries", "2",
+                    "--download-archive", str(folder / ".douyinhehe-downloaded.txt"),
+                    "--yes-playlist" if mode == "channel" else "--no-playlist",
+                    "--paths", str(folder), "--output", "%(id)s.%(ext)s",
+                    "--print", "after_move:filepath"]
+            if max_items:
+                args += ["--playlist-end", str(max_items)]
+            args.append(url)
             result = subprocess.run(args, capture_output=True, text=True, timeout=3600, check=False)
             if result.returncode:
                 raise RuntimeError(result.stderr[-1500:] or result.stdout[-1500:])
