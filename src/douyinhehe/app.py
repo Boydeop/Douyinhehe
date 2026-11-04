@@ -82,7 +82,7 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio 3.0 · Affiliate Video Editor")
+        self.setWindowTitle("Douyinhehe Studio 3.1 · OCR Offline · Affiliate Video Editor")
         self.setMinimumSize(1160, 780)
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         heading = QLabel("Thư viện · Studio · Xuất bản")
         heading.setObjectName("heading")
         body.addWidget(heading)
-        intro = QLabel("Douyinhehe 3.0  |  Tải hàng loạt  |  Biên tập bằng FFmpeg")
+        intro = QLabel("Douyinhehe 3.1  |  Tải hàng loạt  |  OCR tiếng Trung offline  |  FFmpeg")
         intro.setObjectName("subheading")
         body.addWidget(intro)
         self.pages = QStackedWidget()
@@ -343,9 +343,12 @@ class MainWindow(QMainWindow):
         show_frame = QPushButton("▶ Xem khung tại vị trí thanh thời gian")
         show_frame.clicked.connect(self.on_editor_preview)
         preview_col.addWidget(show_frame)
-        auto = QPushButton("Gợi ý vùng phụ đề Trung")
+        auto = QPushButton("Nhận diện chữ Trung bằng OCR offline")
         auto.clicked.connect(self.on_editor_auto)
         preview_col.addWidget(auto)
+        check_ocr = QPushButton("Kiểm tra OCR và model đã đóng kèm")
+        check_ocr.clicked.connect(self.on_ocr_check)
+        preview_col.addWidget(check_ocr)
         clear = QPushButton("Xóa vùng che · chuột phải hoàn tác")
         clear.clicked.connect(self.studio_canvas.clear_regions)
         preview_col.addWidget(clear)
@@ -472,9 +475,10 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             return self.alert(exc)
         if auto_each:
-            confirm = QMessageBox.question(self, "Kiểm tra chế độ tự động",
-                "Nếu RapidOCR chưa được cài, ứng dụng chỉ làm mờ vùng ước lượng phía dưới khung hình. "
-                "Điều này có thể che nhầm nội dung. Hãy kiểm tra kết quả sau khi render. Tiếp tục?",
+            confirm = QMessageBox.question(self, "Nhận diện OCR từng video",
+                "OCR offline sẽ phân tích một khung mẫu mỗi video và gợi ý vùng che, "
+                "không đảm bảo che hết phụ đề thay đổi theo thời gian. "
+                "Nếu không phát hiện chữ Trung, ứng dụng không che mù vùng khác. Tiếp tục?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if confirm != QMessageBox.StandardButton.Yes:
                 return
@@ -489,7 +493,12 @@ class MainWindow(QMainWindow):
                                                       seconds=preset.trim_start + .5, fit=preset.fit)
                         regions, reason = suggest_chinese_regions(frame)
                         report(reason)
-                        active = replace(preset, masks=regions)
+                        if regions:
+                            # Preserve any manually drawn regions when automatic OCR is enabled.
+                            manual = tuple(preset.masks)
+                            active = replace(preset, masks=(manual + regions)[:12])
+                        else:
+                            report(f"{video.name}: OCR không phát hiện chữ Trung; giữ vùng che thủ công nếu có.")
                 dest = output / f"{video.stem}_douyinhehe.mp4"
                 if dest.resolve() == video.resolve():
                     raise ValueError("Không ghi đè file nguồn.")
@@ -516,6 +525,16 @@ class MainWindow(QMainWindow):
                 self.alert(exc)
         self.job("Xem khung video", lambda report: extract_preview_frame(video, target,
                  seconds=float(second), fit=fit), done)
+
+    def on_ocr_check(self):
+        from .ocr_support import check_ocr_assets, offline_ocr_smoke_test
+        status = check_ocr_assets()
+        if not status.ready:
+            return self.alert(status.message)
+        self.job("Kiểm tra OCR offline", lambda report: offline_ocr_smoke_test(),
+                 lambda result: QMessageBox.information(self, "OCR offline",
+                    f"OCR hoạt động: {result['recognized_lines']} dòng đã nhận diện; "
+                    f"{result['models']} model ONNX đóng kèm."))
 
     def on_editor_auto(self):
         if not self._studio_frame:
@@ -862,6 +881,9 @@ class MainWindow(QMainWindow):
         ytdlp_update.clicked.connect(self.on_downloader_update)
         status.layout().addRow(ytdlp_check)
         status.layout().addRow(ytdlp_update)
+        ocr_check = QPushButton("KIỂM TRA RAPIDOCR OFFLINE (không tải model)")
+        ocr_check.clicked.connect(self.on_ocr_check)
+        status.layout().addRow(ocr_check)
         logs_button = QPushButton("XUẤT LOG ĐÃ CHE API KEY")
         logs_button.clicked.connect(self.on_export_logs)
         status.layout().addRow(logs_button)

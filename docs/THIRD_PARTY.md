@@ -8,6 +8,12 @@ The Douyinhehe source code is MIT. That does **not** relicense bundled third-par
 - [Pillow](https://github.com/python-pillow/Pillow): HPND, [httpx](https://github.com/encode/httpx): BSD-3-Clause, [google-genai](https://github.com/googleapis/python-genai): Apache-2.0.
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper): MIT; model weights can have **separate licenses**, check model cards prior to commercial use.
 - [keyring](https://github.com/jaraco/keyring): MIT. Other transitive licenses apply.
+- [RapidOCR](https://github.com/RapidAI/RapidOCR): Apache-2.0. The bundled
+  detection, classification and Chinese-recognition ONNX models derive from PaddleOCR,
+  also subject to upstream Apache-2.0 model attribution; see
+  [RapidOCR MODEL_LICENSES.md](https://github.com/RapidAI/RapidOCR/blob/main/MODEL_LICENSES.md).
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime): MIT. The portable
+  build includes CPU inference libraries, with no cloud inference requirement.
 - Postiz is a **separate connected service** and its self-hosted source is AGPL-3.0. This project does not bundle or redistribute Postiz source code.
 
 GitHub Actions packages FFmpeg from Chocolatey. This pipeline is a test-build foundation, not proof that all licensing conditions for commercial distribution have been met. Before public releases, audit installed packages and provide matching binary licenses/source compliance information.

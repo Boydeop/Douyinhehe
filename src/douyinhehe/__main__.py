@@ -28,6 +28,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="DouyinhehePro")
     parser.add_argument("--self-test", action="store_true", help="Check packaged dependencies, then exit")
     parser.add_argument("--ui-smoke-test", action="store_true", help="Construct UI without opening a window")
+    parser.add_argument("--ocr-self-test", action="store_true", help="Run bundled OCR offline inference test")
     parser.add_argument("--version", action="store_true", help="Print application version")
     parser.add_argument("--doctor", action="store_true", help="Check downloader and local video tools")
     args = parser.parse_args()
@@ -37,6 +38,11 @@ def main() -> None:
         return
     if args.self_test:
         raise SystemExit(self_test())
+    if args.ocr_self_test:
+        from .ocr_support import offline_ocr_smoke_test
+        import json
+        print(json.dumps(offline_ocr_smoke_test(), ensure_ascii=False))
+        return
     if args.ui_smoke_test:
         import os
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -52,7 +58,9 @@ def main() -> None:
         from .diagnostics import downloader_status
         from .media import find_binary
         import json
+        from .ocr_support import check_ocr_assets
         print(json.dumps({"yt_dlp": downloader_status().__dict__,
+                          "ocr": check_ocr_assets().__dict__,
                           "ffmpeg": find_binary("ffmpeg"), "ffprobe": find_binary("ffprobe")},
                          ensure_ascii=False, indent=2))
         return

@@ -64,31 +64,14 @@ def default_caption_region():
     return (MaskRegion(.08, .74, .84, .16),)
 
 def suggest_chinese_regions(frame: Path):
-    """Use optional RapidOCR for CJK boxes; otherwise label the estimate clearly."""
-    path = Path(frame)
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    try:
-        from PIL import Image
-        from rapidocr_onnxruntime import RapidOCR  # type: ignore[import-not-found]
-        with Image.open(path) as img:
-            width, height = img.size
-        data, _ = RapidOCR()(str(path))
-        regions = []
-        for record in data or []:
-            if len(record) < 2 or not re.search(r"[\u3400-\u9fff]", str(record[1])):
-                continue
-            xs = [float(v[0]) for v in record[0]]
-            ys = [float(v[1]) for v in record[0]]
-            left, top = max(0., min(xs)/width-.02), max(0., min(ys)/height-.01)
-            right, bottom = min(1., max(xs)/width+.02), min(1., max(ys)/height+.01)
-            if right-left >= .005 and bottom-top >= .005:
-                regions.append(MaskRegion(left,top,right-left,bottom-top))
-        if regions:
-            return parse_regions(regions[:12]), "RapidOCR gợi ý vùng có chữ Trung. Hãy xem lại từng vùng."
-        return (), "RapidOCR không thấy chữ Trung trên khung xem trước."
-    except ImportError:
-        return default_caption_region(), "Chưa có RapidOCR: vùng được chọn chỉ là GỢI Ý vùng sub dưới video, không phải kết quả OCR."
+    """Detect Chinese text using bundled RapidOCR. Never silently mask a guessed area."""
+    from .ocr_support import detect_chinese_boxes
+
+    found = detect_chinese_boxes(Path(frame))
+    regions = parse_regions([MaskRegion(*rect) for rect in found])
+    if regions:
+        return regions, f"OCR offline tìm thấy {len(regions)} vùng có chữ Trung; kiểm tra trước khi xuất."
+    return (), "OCR offline không thấy chữ Trung trong khung này; không tự che nhầm vùng khác."
 
 def extract_preview_frame(video: Path, image: Path, *, seconds: float = 1.0, fit: str = "crop",
                           width: int = 360, height: int = 640):
