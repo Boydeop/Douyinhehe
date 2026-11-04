@@ -37,8 +37,10 @@ def main() -> int:
         parser.error("Cần URL, thư mục và số lượng video từ 0 đến 5000")
     parsed = urlsplit(args.url)
     host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or host not in {"douyin.com", "www.douyin.com"}:
-        parser.error("Chỉ hỗ trợ liên kết Douyin HTTPS")
+    if parsed.scheme != "https" or host not in {
+        "douyin.com", "www.douyin.com", "v.douyin.com", "v.iesdouyin.com"
+    }:
+        parser.error("Chỉ hỗ trợ liên kết Douyin HTTPS hoặc link chia sẻ Douyin")
     if args.mode == "post" and not parsed.path.startswith("/user/"):
         parser.error("Chế độ post yêu cầu URL hồ sơ Douyin")
 
