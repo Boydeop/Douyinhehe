@@ -432,54 +432,97 @@ class MainWindow(QMainWindow):
         files, _ = QFileDialog.getOpenFileNames(self, "Chọn nhiều video", "", "Video (*.mp4 *.mov)")
         if files:
             self.edit_files.setPlainText("\n".join(files))
+            self.on_editor_preview()
+
+    def _editor_preset(self):
+        if not self.edit_authorized.isChecked():
+            raise PermissionError("Bạn cần xác nhận quyền biên tập và sử dụng thương mại.")
+        masks = tuple(replace(r, mode=self.edit_mask_mode.currentData()) for r in self.studio_canvas.regions())
+        end = self.edit_trim_end.value() or None
+        preset = EditPreset(fit=self.edit_fit.currentText(), brightness=self.edit_bright.value(),
+                            contrast=self.edit_contrast.value(), saturation=self.edit_saturation.value(),
+                            creator="", original_url=self.edit_url.text().strip(), cta=self.edit_cta.text(),
+                            masks=masks, trim_start=self.edit_trim_start.value(), trim_end=end,
+                            cta_position=self.cta_position.currentText(),
+                            cta_background=self.cta_background.text(),
+                            cta_foreground=self.cta_foreground.text(), cta_font_size=self.cta_font_size.value(),
+                            subtitle=Path(self.edit_srt.text()) if self.edit_srt.text() else None,
+                            narration=Path(self.edit_narration.text()) if self.edit_narration.text() else None)
+        preset.validate()
+        return preset
 
     def on_render(self):
         try:
-            files = [Path(x.strip()) for x in self.edit_files.toPlainText().splitlines() if x.strip()]
-            if not files or not all(f.is_file() for f in files):
-                raise ValueError("Đường dẫn video nguồn phải tồn tại.")
-            if not self.edit_authorized.isChecked() or not self.edit_evidence.text().strip():
-                raise PermissionError("Chưa xác nhận quyền sử dụng thương mại và bằng chứng cấp phép.")
-            LicenseGrant(self.edit_url.text().strip(), self.edit_creator.text().strip(),
-                         self.edit_evidence.text().strip(), True, True,
-                         expires_on=self.edit_expiry.text().strip(),
-                         evidence_file=self.edit_evidence_file.text().strip()).validate()
-            preset = EditPreset(fit=self.edit_fit.currentText(), brightness=self.edit_bright.value(),
-                                contrast=self.edit_contrast.value(), saturation=self.edit_saturation.value(),
-                                creator=self.edit_creator.text().strip(), original_url=self.edit_url.text().strip(),
-                                cta=self.edit_cta.text(),
-                                cta_position=self.cta_position.currentText(),
-                                cta_background=self.cta_background.text(),
-                                cta_foreground=self.cta_foreground.text(),
-                                cta_font_size=self.cta_font_size.value(),
-                                subtitle=Path(self.edit_srt.text()) if self.edit_srt.text() else None,
-                                narration=Path(self.edit_narration.text()) if self.edit_narration.text() else None)
-            preset.validate()
+            files = [Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip()]
+            if not files or not all(v.is_file() for v in files):
+                raise ValueError("Cần chọn file video có thật.")
+            preset = self._editor_preset()
             if preset.subtitle:
                 issues = audit_srt(preset.subtitle)
-                if any(issue.severity == "error" for issue in issues):
-                    raise ValueError("Phụ đề bị lỗi timecode. Hãy sửa trước khi render.")
+                if any(x.severity == "error" for x in issues):
+                    raise ValueError("Phụ đề có lỗi timecode, sửa trước khi render.")
                 if issues:
-                    msg = "Có %d cảnh báo phụ đề, vẫn tiếp tục render?\n%s" % (
-                        len(issues), "\n".join(x.detail for x in issues[:5]))
-                    answer = QMessageBox.question(self, "Kiểm tra phụ đề", msg,
-                                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                    if answer != QMessageBox.StandardButton.Yes:
+                    confirm = QMessageBox.question(self, "Cảnh báo phụ đề",
+                        f"Có {len(issues)} cảnh báo phụ đề. Vẫn tiếp tục render?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                    if confirm != QMessageBox.StandardButton.Yes:
                         return
             output = Path(self.edit_out.text())
+            auto_each = self.edit_auto_each.isChecked()
         except Exception as exc:
             return self.alert(exc)
-
+        if auto_each:
+            confirm = QMessageBox.question(self, "Kiểm tra chế độ tự động",
+                "Nếu RapidOCR chưa được cài, ứng dụng chỉ làm mờ vùng ước lượng phía dưới khung hình. "
+                "Điều này có thể che nhầm nội dung. Hãy kiểm tra kết quả sau khi render. Tiếp tục?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
         def task(report):
-            result = []
-            for i, path in enumerate(files, 1):
-                report(f"[{i}/{len(files)}] {path.name}")
-                dest = output / f"{path.stem}_douyinhehe.mp4"
-                if dest.resolve() == path.resolve():
-                    raise ValueError("Đầu ra không được trùng đầu vào.")
-                result.append(render_video(path, dest, preset, report))
-            return result
-        self.job("Render video", task, lambda result: self.log(f"Đã xuất {len(result)} video vào {output}"))
+            outputs = []
+            for index, video in enumerate(files, 1):
+                report(f"[{index}/{len(files)}] Render {video.name}")
+                active = preset
+                if auto_each:
+                    with tempfile.TemporaryDirectory(prefix="douyinhehe-mask-") as temp:
+                        frame = extract_preview_frame(video, Path(temp) / "preview.png",
+                                                      seconds=preset.trim_start + .5, fit=preset.fit)
+                        regions, reason = suggest_chinese_regions(frame)
+                        report(reason)
+                        active = replace(preset, masks=regions)
+                dest = output / f"{video.stem}_douyinhehe.mp4"
+                if dest.resolve() == video.resolve():
+                    raise ValueError("Không ghi đè file nguồn.")
+                outputs.append(render_video(video, dest, active, report))
+            return outputs
+        self.job("Render hàng loạt", task, lambda result: self.log(f"Đã xuất {len(result)} video vào {output}"))
+
+    def on_editor_preview(self):
+        try:
+            video = next(Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip())
+            if not video.is_file():
+                raise FileNotFoundError(video)
+            second = self.edit_seek.value()
+            fit = self.edit_fit.currentText()
+            digest = hashlib.sha256(str(video).encode()).hexdigest()[:12]
+            target = user_data_dir() / "previews" / f"studio-{digest}-{second}.png"
+        except Exception as exc:
+            return self.alert(exc)
+        def done(frame):
+            try:
+                self.studio_canvas.set_image(str(frame))
+                self._studio_frame = Path(frame)
+            except Exception as exc:
+                self.alert(exc)
+        self.job("Xem khung video", lambda report: extract_preview_frame(video, target,
+                 seconds=float(second), fit=fit), done)
+
+    def on_editor_auto(self):
+        if not self._studio_frame:
+            return self.alert("Hãy nạp khung hình trước khi gợi ý che phụ đề.")
+        self.job("Gợi ý vùng chữ Trung", lambda report: suggest_chinese_regions(self._studio_frame),
+                 lambda result: (self.studio_canvas.set_regions(result[0]),
+                                 QMessageBox.information(self, "Gợi ý vùng phụ đề", result[1])))
 
     def on_save_cta(self):
         try:
