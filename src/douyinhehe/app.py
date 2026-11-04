@@ -115,7 +115,7 @@ class MainWindow(QMainWindow):
         heading = QLabel("Thư viện · Studio · Xuất bản")
         heading.setObjectName("heading")
         body.addWidget(heading)
-        intro = QLabel("Douyinhehe 3.1  |  Tải hàng loạt  |  OCR tiếng Trung offline  |  FFmpeg")
+        intro = QLabel("Douyinhehe 3.2  |  Tải hàng loạt  |  OCR tiếng Trung offline  |  FFmpeg")
         intro.setObjectName("subheading")
         body.addWidget(intro)
         self.pages = QStackedWidget()
