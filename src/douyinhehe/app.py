@@ -328,21 +328,53 @@ class MainWindow(QMainWindow):
         self.job("Tải Douyin", task, lambda n: (self.log(f"Đã tải {n} video mới"), self.refresh_sources()))
 
     def build_editor(self, layout):
-        panel = group("Chỉnh sửa hàng loạt bằng FFmpeg (offline)")
-        self.edit_files = paragraph("Mỗi dòng là đường dẫn video MP4/MOV trong máy", 115)
-        files_btn = QPushButton("Chọn nhiều video")
+        studio = QWidget()
+        columns = QHBoxLayout(studio)
+        columns.setContentsMargins(0, 0, 0, 0)
+        preview_side = QWidget()
+        preview_col = QVBoxLayout(preview_side)
+        preview_col.addWidget(QLabel("KHUNG XEM TRƯỚC   ·   Kéo chuột để khoanh phụ đề"))
+        self.studio_canvas = MaskCanvas()
+        preview_col.addWidget(self.studio_canvas, 1)
+        self.edit_seek = QSlider(Qt.Orientation.Horizontal)
+        self.edit_seek.setRange(0, 240)
+        self.edit_seek.setValue(1)
+        preview_col.addWidget(self.edit_seek)
+        show_frame = QPushButton("▶ Xem khung tại vị trí thanh thời gian")
+        show_frame.clicked.connect(self.on_editor_preview)
+        preview_col.addWidget(show_frame)
+        auto = QPushButton("Gợi ý vùng phụ đề Trung")
+        auto.clicked.connect(self.on_editor_auto)
+        preview_col.addWidget(auto)
+        clear = QPushButton("Xóa vùng che · chuột phải hoàn tác")
+        clear.clicked.connect(self.studio_canvas.clear_regions)
+        preview_col.addWidget(clear)
+        columns.addWidget(preview_side, 2)
+
+        panel = group("Chỉnh sửa hàng loạt · FFmpeg")
+        self.edit_files = paragraph("Chọn video MP4/MOV hoặc dán đường dẫn, mỗi dòng một file", 95)
+        files_btn = QPushButton("Thêm nhiều video")
         files_btn.clicked.connect(self.choose_edit_files)
         self.edit_out = field("Thư mục xuất", str(user_data_dir() / "exports"))
         out_btn = QPushButton("Chọn thư mục xuất")
         out_btn.clicked.connect(lambda: self._folder(self.edit_out))
-        self.edit_creator = field("Tên tác giả gốc để ghi nguồn")
-        self.edit_url = field("URL Douyin gốc (hiện trong metadata)")
-        self.edit_evidence = field("Bằng chứng có quyền chỉnh sửa và dùng cho affiliate")
-        self.edit_expiry = field("Hết hạn giấy phép YYYY-MM-DD (tùy chọn)")
-        self.edit_evidence_file = field("File bằng chứng cấp phép (tùy chọn)")
-        self.edit_authorized = QCheckBox("Xác nhận video đã được cấp quyền biên tập và sử dụng thương mại")
+        self.edit_url = field("URL Douyin gốc để ghi trong metadata (tùy chọn)")
+        self.edit_authorized = QCheckBox("Tôi có quyền sử dụng thương mại và chỉnh sửa các video")
         self.edit_fit = QComboBox()
         self.edit_fit.addItems(["crop", "pad", "blur"])
+        self.edit_mask_mode = QComboBox()
+        self.edit_mask_mode.addItem("Làm mờ vùng đã chọn", "blur")
+        self.edit_mask_mode.addItem("Che kín vùng đã chọn", "solid")
+        self.edit_auto_each = QCheckBox("Tự đề xuất vùng chữ cho từng video (cần kiểm tra kết quả)")
+        self.edit_trim_start = QDoubleSpinBox()
+        self.edit_trim_start.setRange(0, 36000)
+        self.edit_trim_start.setSuffix(" giây")
+        self.edit_trim_start.setSingleStep(.5)
+        self.edit_trim_end = QDoubleSpinBox()
+        self.edit_trim_end.setRange(0, 36000)
+        self.edit_trim_end.setSuffix(" giây")
+        self.edit_trim_end.setSingleStep(.5)
+        self.edit_trim_end.setSpecialValueText("Đến cuối")
         self.edit_bright = QDoubleSpinBox()
         self.edit_bright.setRange(-.5, .5)
         self.edit_bright.setSingleStep(.05)
@@ -354,7 +386,7 @@ class MainWindow(QMainWindow):
         self.edit_saturation.setRange(0, 2)
         self.edit_saturation.setSingleStep(.1)
         self.edit_saturation.setValue(1)
-        self.edit_cta = field("Ví dụ: Link sản phẩm nằm ở trang cá nhân")
+        self.edit_cta = field("Ví dụ: Link sản phẩm có ở trang cá nhân")
         self.cta_name = field("Tên preset CTA", "Gia dụng")
         self.cta_position = QComboBox()
         self.cta_position.addItems(["bottom", "center"])
@@ -367,34 +399,34 @@ class MainWindow(QMainWindow):
         save_cta.clicked.connect(self.on_save_cta)
         load_cta = QPushButton("Nạp preset CTA")
         load_cta.clicked.connect(self.on_load_cta)
-        self.edit_srt = field("Phụ đề .srt tùy chọn (đã dịch sang Việt)")
+        self.edit_srt = field("Phụ đề .srt tiếng Việt (tùy chọn)")
         srt_btn = QPushButton("Chọn SRT")
         srt_btn.clicked.connect(lambda: self.chooser(self.edit_srt, filter="SRT (*.srt)"))
-        self.edit_narration = field("File giọng đọc .wav/.mp3 tùy chọn (thay audio gốc)")
+        self.edit_narration = field("Audio lồng tiếng tùy chọn")
         narration_btn = QPushButton("Chọn audio")
         narration_btn.clicked.connect(lambda: self.chooser(self.edit_narration, filter="Audio (*.wav *.mp3)"))
-        for label, value in (("Video", self.edit_files), ("", files_btn), ("Xuất", self.edit_out),
-                             ("", out_btn), ("Tác giả", self.edit_creator), ("URL nguồn", self.edit_url),
-                             ("Bằng chứng", self.edit_evidence), ("File bằng chứng", self.edit_evidence_file),
-                             ("Hết hạn", self.edit_expiry), ("", self.edit_authorized),
-                             ("Kiểu khung 9:16", self.edit_fit), ("Độ sáng", self.edit_bright),
+        for label, value in (("Video", self.edit_files), ("", files_btn), ("Thư mục xuất", self.edit_out),
+                             ("", out_btn), ("URL nguồn", self.edit_url), ("", self.edit_authorized),
+                             ("Khung 9:16", self.edit_fit), ("Che chữ", self.edit_mask_mode),
+                             ("", self.edit_auto_each), ("Cắt từ", self.edit_trim_start),
+                             ("Cắt đến", self.edit_trim_end), ("Độ sáng", self.edit_bright),
                              ("Tương phản", self.edit_contrast), ("Bão hòa", self.edit_saturation),
                              ("CTA", self.edit_cta), ("Preset CTA", self.cta_name),
                              ("Vị trí CTA", self.cta_position), ("Màu nền", self.cta_background),
                              ("Màu chữ", self.cta_foreground), ("Cỡ chữ", self.cta_font_size),
-                             ("", save_cta), ("", load_cta), ("Phụ đề", self.edit_srt), ("", srt_btn),
-                             ("Thuyết minh", self.edit_narration), ("", narration_btn)):
+                             ("", save_cta), ("", load_cta), ("Phụ đề", self.edit_srt),
+                             ("", srt_btn), ("Thuyết minh", self.edit_narration), ("", narration_btn)):
             panel.layout().addRow(label, value)
-        subtitle_check = QPushButton("KIỂM TRA PHỤ ĐỀ · tốc độ đọc / số dòng")
-        subtitle_check.clicked.connect(self.on_check_srt)
-        preview = QPushButton("XEM TRƯỚC 5 GIÂY CÓ PHỤ ĐỀ")
-        preview.clicked.connect(self.on_subtitle_preview)
-        panel.layout().addRow(subtitle_check)
-        panel.layout().addRow(preview)
+        check_sub = QPushButton("Kiểm tra phụ đề · tốc độ đọc")
+        check_sub.clicked.connect(self.on_check_srt)
+        preview_sub = QPushButton("Xem thử 5 giây có phụ đề")
+        preview_sub.clicked.connect(self.on_subtitle_preview)
         go = QPushButton("RENDER HÀNG LOẠT 1080 × 1920 MP4")
         go.clicked.connect(self.on_render)
-        panel.layout().addRow(go)
-        layout.addWidget(panel)
+        for btn in (check_sub, preview_sub, go):
+            panel.layout().addRow(btn)
+        columns.addWidget(panel, 3)
+        layout.addWidget(studio)
 
     def choose_edit_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Chọn nhiều video", "", "Video (*.mp4 *.mov)")
