@@ -30,6 +30,17 @@ def test_single_video_and_short_link_use_f2_not_ytdlp(tmp_path, monkeypatch, url
     assert got == [video]
 
 
+def test_worker_allows_official_short_and_video_urls():
+    from scripts.f2_worker import validate_source_url
+    validate_source_url(SHORT, "one")
+    validate_source_url(VIDEO, "one")
+    validate_source_url("https://www.douyin.com/user/MS4w", "post")
+    with pytest.raises(ValueError):
+        validate_source_url("https://douyin.com.evil.example/a", "one")
+    with pytest.raises(ValueError):
+        validate_source_url(SHORT, "post")
+
+
 def test_f2_single_video_mode_does_not_hide_no_file(tmp_path, monkeypatch):
     worker = tmp_path / "DouyinF2Worker.exe"
     worker.touch()
