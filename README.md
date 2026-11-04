@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.0.0 engineering preview**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.1.0 engineering preview (bundled offline OCR)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Implemented
 
@@ -18,6 +18,19 @@ Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle trans
 | Desktop | PySide6 worker queue, SQLite, OS credential storage, nine feature tabs | Live platform authorizations still need user testing |
 | V2 batch pipeline | CSV/JSON manifests with per-video rights, recoverable render jobs, deduplication, provenance sidecars | Only local edits auto-retry; remote publishing stays manual-approval |
 | V2 delivery QA | Codec/aspect checks and per-platform CTA/source guidance | Guidelines, not platform approval |
+
+## Offline Chinese OCR (included in Windows v3.1)
+
+The portable Windows build includes RapidOCR, ONNX Runtime and the actual ONNX
+model files. **No API key or manual model installation is required**.
+The Studio previews OCR-detected Chinese captions as editable boxes, while
+manual masking remains available. A single representative frame does not
+reliably cover every changing subtitle, so review the video before publishing.
+No generic blind mask is applied when OCR is missing or detects no text.
+
+To verify a downloaded portable folder: `DouyinhehePro.exe --ocr-self-test` and `DouyinhehePro.exe --render-self-test`.
+See [OCR guide](docs/OCR_OFFLINE.md). This package does not require online model
+inference. Model licenses and packaging notices are in `docs/THIRD_PARTY.md`.
 
 ## Quick start (development)
 

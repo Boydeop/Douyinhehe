@@ -1,3 +1,3 @@
-"""Douyinhehe Pro 3.0 engineering preview: licensed video batch studio."""
+"""Douyinhehe Studio 3.1: offline OCR-enabled video batch editor."""
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"

@@ -48,6 +48,7 @@ jobs:
           Copy-Item vendor/bin/ffmpeg.exe dist/DouyinhehePro/bin/ffmpeg.exe -Force
           Copy-Item vendor/bin/ffprobe.exe dist/DouyinhehePro/bin/ffprobe.exe -Force
           Copy-Item docs/THIRD_PARTY.md dist/DouyinhehePro/THIRD_PARTY.md -Force
+          Copy-Item docs/OCR_OFFLINE.md dist/DouyinhehePro/OCR_OFFLINE.md -Force
           & ./dist/DouyinhehePro/bin/ffmpeg.exe -buildconf | Out-File -Encoding utf8 dist/DouyinhehePro/FFMPEG_BUILDINFO.txt
           $ffmpegSource = "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz"
           "FFmpeg Chocolatey version: 9.0.2`nSource: $ffmpegSource`nActual build configuration: see FFMPEG_BUILDINFO.txt" |
@@ -61,6 +62,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ffprobe smoke test failed' }
           & ./dist/DouyinhehePro/bin/ffmpeg.exe -version | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'ffmpeg smoke test failed' }
+          # Three ONNX model assets must be physically present inside the portable folder.
+          $models = @(Get-ChildItem -Path dist/DouyinhehePro -Recurse -Filter '*.onnx' -File)
+          if ($models.Count -lt 3) { throw "Bundled OCR model assets missing (found $($models.Count))" }
+          & ./dist/DouyinhehePro/DouyinhehePro.exe --ocr-self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen OCR inference failed: never publish a broken offline OCR build' }
+          & ./dist/DouyinhehePro/DouyinhehePro.exe --render-self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen FFmpeg masked render failed' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor

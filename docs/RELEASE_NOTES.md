@@ -1,36 +1,21 @@
-# Douyinhehe Pro v3.0.0 · Engineering Preview
+# Douyinhehe Studio v3.1.0 - OCR bundled / audited release candidate
 
-**Portable Windows x64:** Download `DouyinhehePro-Windows-x64.zip` and `SHA256SUMS.txt`,
-verify SHA-256, unpack the entire `DouyinhehePro` directory, and run
-`DouyinhehePro.exe`. Keep the `bin` and `_internal` directories alongside it.
+This update focuses on shipping Chinese text OCR **inside** the Windows portable
+EXE distribution. It adds maintainable RapidOCR and ONNX Runtime CPU, bundled
+ONNX model weights, build-time artifact checking, and a real frozen OCR inference
+smoke test. No remote OCR service, API key, or model download is required.
 
-## Highlights
-- Douyin downloader supports a multiline URL batch and **full profile**
-  (`douyin.com/user/...`) mode with an explicit unlimited option and
-  persistent `yt-dlp` archive for duplicate avoidance. Profile coverage
-  depends on the extractor, available access and Douyin behavior.
-- No author, contract or license-expiration fields in the new download, video
-  editor and local manifest workflows. New records do not store those fields.
-  A **user-confirmed cleanup action** removes legacy sensitive SQLite metadata.
-  Older exported provenance JSON files are not automatically removed.
-- Mini-editor with YouTube-inspired navigation, frame preview, mouse-drag
-  blur/solid subtitle masks, per-video automatic region proposals, trim,
-  9:16 reframing, color tuning, SRT, narration, CTA and batch rendering.
-- Optional RapidOCR suggests actual regions with recognized Chinese characters.
-  **The portable EXE does not include RapidOCR by default.** Without it, the
-  automatic feature only suggests a generic lower-third and reports that it
-  did not detect text. Always review results.
-- CI: Ubuntu/Windows tests, FFmpeg masked-render regression test, packaged
-  FFmpeg and a Qt UI smoke test for the frozen Windows EXE.
+Changes:
+- Direct OCR result contract via `RapidOCR(...).boxes/txts/scores`.
+- Cached engine shared between preview and batch workers.
+- Fail clearly if model assets are missing, instead of applying an unrelated
+  lower-third region to every video.
+- Manual masks remain intact in automatic batch mode.
+- OCR status button and `--ocr-self-test` command.
+- Test cases for OCR boxes, no-detection, confidence threshold and failure paths.
 
-**Boundaries:** This is a small batch editor, **not** a full CapCut multitrack
-editor. License rights must cover commercial reuse, editing and platform
-distribution. Attribution obligations remain applicable. Editing or hiding
-subtitles does not bypass copyright or originality policies. Douyin access
-and social publishing can fail or require account authorization and OAuth.
-Cloud posting after shutdown requires a separate online service; it is
-not provided by the desktop EXE alone.
-
-Source license: MIT. Bundled Qt, FFmpeg, other dependencies and optional OCR
-models have their own redistribution obligations; consult third-party notices.
-This engineering preview is not code-signed.
+Limitations: OCR works from sampled frames and does not track changing text
+throughout an entire video. Always inspect the result. Distribution of FFmpeg,
+Qt and ONNX OCR components has separate license obligations. See THIRD_PARTY.md.
+This release does not unlock accounts, bypass platform restrictions, guarantee
+reach, or make transforms exempt from copyright.

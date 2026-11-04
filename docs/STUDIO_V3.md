@@ -8,15 +8,16 @@
    items). A persistent `yt-dlp` archive prevents downloads already completed.
 3. Open Studio, choose multiple local videos, scrub a representative frame,
    and **drag on the preview** to define manual blur or solid cover regions.
-4. Click **Gợi ý vùng phụ đề Trung** for optional RapidOCR text boxes. When
-   RapidOCR is not installed, the app suggests a generic lower-third only
-   and clearly says it did **not** detect Chinese text.
+4. Click **Nhận diện chữ Trung bằng OCR offline** for detected Chinese text boxes.
+   RapidOCR, ONNX Runtime and the three Chinese OCR models are bundled in Windows
+   v3.1. Missing model assets fail the build/self-test instead of silently guessing.
 5. Tune fit, color, CTA, trim, subtitles and narration. Apply to a batch
    or use CSV/JSON queue with `masks`, `trim_start`, `trim_end`.
 
-The executable does not ship RapidOCR weights by default. For a development
-setup, install the optional `rapidocr-onnxruntime` package and confirm that
-its model redistribution terms and the real binary build are compatible.
+The Windows executable now bundles the maintained `rapidocr` package and ONNX
+Runtime CPU models. The editor analyzes a representative frame, so moving
+captions need manual verification or additional user-selected regions.
+See [OCR_OFFLINE.md](OCR_OFFLINE.md) for smoke-test instructions and caveats.
 
 ## Private data
 
