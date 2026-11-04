@@ -1,0 +1,46 @@
+"""Isolated F2 adapter. Bundled as a separate executable to avoid dependency conflicts.
+
+F2 only receives explicitly supplied public Douyin URLs. No credentials are passed
+on the command line. Never treat a successful import as verified website access.
+"""
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+from urllib.parse import urlsplit
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Douyinhehe channel downloader")
+    parser.add_argument("--doctor", action="store_true")
+    parser.add_argument("--mode", choices=("one", "post"), default="post")
+    parser.add_argument("--url")
+    parser.add_argument("--path")
+    parser.add_argument("--max-counts", type=int, default=50)
+    args = parser.parse_args()
+    import f2
+
+    if args.doctor:
+        print("F2 worker installed:", getattr(f2, "__version__", "unknown"))
+        return 0
+
+    if not args.url or not args.path or not 0 <= args.max_counts <= 5000:
+        parser.error("Cần URL, thư mục và số lượng video từ 0 đến 5000")
+    parsed = urlsplit(args.url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in {"douyin.com", "www.douyin.com"}:
+        parser.error("Chỉ hỗ trợ liên kết Douyin HTTPS")
+    if args.mode == "post" and not parsed.path.startswith("/user/"):
+        parser.error("Chế độ post yêu cầu URL hồ sơ Douyin")
+
+    folder = Path(args.path).resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    from f2.cli.cli_commands import main as f2_cli
+    cli_args = ["dy", "--mode", args.mode, "--url", args.url,
+                "--path", str(folder), "--max-counts", str(args.max_counts)]
+    f2_cli.main(args=cli_args, standalone_mode=False)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
