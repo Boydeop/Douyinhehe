@@ -21,7 +21,7 @@ from .batch import create_local_manifest, enqueue_manifest, run_queue
 from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
-from .downloader import download_authorized, parse_douyin_urls
+from .downloader import download_authorized, parse_douyin_urls, is_channel_url
 from .diagnostics import downloader_status, update_ytdlp
 from .subtitle_qc import audit_srt, preview_five_seconds
 from .glossary import load_glossary, save_glossary, validate_glossary
@@ -32,6 +32,12 @@ from .tts_adapters import get_tts_engine
 from .media import EditPreset, find_binary, render_video
 from .publisher import PostizClient
 from .subtitles import transcribe_to_srt, translate_srt, text_to_voice
+from .studio_ui import MaskCanvas
+from .studio_engine import MaskRegion, suggest_chinese_regions, extract_preview_frame
+from PySide6.QtWidgets import QListWidget, QStackedWidget, QSlider, QFrame
+from dataclasses import replace
+import hashlib
+import tempfile
 
 
 class WorkerSignals(QObject):
@@ -76,62 +82,94 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Pro 2.1 · Affiliate Video Studio")
-        self.setMinimumSize(1050, 760)
+        self.setWindowTitle("Douyinhehe Studio 3.0 · Affiliate Video Editor")
+        self.setMinimumSize(1160, 780)
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
         self._workers = set()
+        self._studio_frame = None
         root = QWidget()
-        outer = QVBoxLayout(root)
-        heading = QLabel("DOUYINHEHE  /  AFFILIATE STUDIO")
+        outer = QHBoxLayout(root)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(210)
+        navbox = QVBoxLayout(sidebar)
+        navbox.setContentsMargins(12, 20, 12, 15)
+        brand = QLabel("▶  DOUYINHEHE")
+        brand.setObjectName("brand")
+        navbox.addWidget(brand)
+        navbox.addWidget(QLabel("AFFILIATE VIDEO STUDIO"))
+        self.nav = QListWidget()
+        self.nav.setObjectName("navigation")
+        self.nav.setSpacing(3)
+        navbox.addWidget(self.nav, 1)
+        navbox.addWidget(QLabel("Chỉ video có quyền sử dụng"))
+        outer.addWidget(sidebar)
+        workspace = QWidget()
+        body = QVBoxLayout(workspace)
+        body.setContentsMargins(20, 16, 20, 10)
+        heading = QLabel("Thư viện · Studio · Xuất bản")
         heading.setObjectName("heading")
-        outer.addWidget(heading)
-        intro = QLabel("Tìm nguồn · Tải video được cấp phép · Việt hóa · Dựng video · Affiliate · Lên lịch")
+        body.addWidget(heading)
+        intro = QLabel("Douyinhehe 3.0  |  Tải hàng loạt  |  Biên tập bằng FFmpeg")
         intro.setObjectName("subheading")
-        outer.addWidget(intro)
-        self.tabs = QTabWidget()
-        outer.addWidget(self.tabs, 1)
+        body.addWidget(intro)
+        self.pages = QStackedWidget()
+        body.addWidget(self.pages, 1)
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
-        self.logs.setMaximumHeight(115)
-        self.logs.setPlaceholderText("Nhật ký tác vụ (không ghi API key)")
-        outer.addWidget(self.logs)
+        self.logs.setMaximumHeight(85)
+        body.addWidget(self.logs)
+        outer.addWidget(workspace, 1)
         self.setCentralWidget(root)
         for title, builder in [
-            ("01  Khám phá", self.build_research),
-            ("02  Tải Douyin", self.build_download),
-            ("03  Batch Editor", self.build_editor),
-            ("04  Dịch & giọng", self.build_translation),
-            ("05  Affiliate", self.build_affiliate),
-            ("06  Lên lịch", self.build_publish),
-            ("07  Cài đặt", self.build_settings),
-            ("08  Batch Queue", self.build_batch_queue),
-            ("09  Kiểm tra video", self.build_delivery_check),
+            ("Khám phá", self.build_research),
+            ("Tải Douyin", self.build_download),
+            ("Studio chỉnh sửa", self.build_editor),
+            ("Phụ đề · Dịch", self.build_translation),
+            ("Affiliate", self.build_affiliate),
+            ("Lên lịch", self.build_publish),
+            ("Cài đặt", self.build_settings),
+            ("Hàng đợi batch", self.build_batch_queue),
+            ("Kiểm tra video", self.build_delivery_check),
         ]:
             widget = QWidget()
             layout = QVBoxLayout(widget)
+            layout.setContentsMargins(8, 10, 10, 10)
             builder(layout)
             layout.addStretch()
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(widget)
-            self.tabs.addTab(scroll, title)
+            self.pages.addWidget(scroll)
+            self.nav.addItem(title)
+        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav.setCurrentRow(2)
         self.setStyleSheet("""
-            QMainWindow, QWidget { background: #101827; color: #edf4ff; font-family: 'Segoe UI'; font-size: 12px; }
-            QLabel#heading { font-weight: 800; font-size: 23px; color: #f7ffff; margin-top: 8px; }
-            QLabel#subheading { color: #90a9bc; margin-bottom: 6px; }
-            QTabBar::tab { color: #b3c9de; padding: 11px 13px; background: #192538; margin: 2px; border-radius: 6px; }
-            QTabBar::tab:selected { background: #1d6075; color: white; }
-            QGroupBox { border: 1px solid #334960; border-radius: 12px; margin-top: 17px; padding: 12px; font-weight: 700; }
-            QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: #73d3dc; }
+            QMainWindow, QWidget { background: #0f0f0f; color: #f1f1f1; font-family: 'Segoe UI'; font-size: 12px; }
+            QFrame#sidebar, QListWidget#navigation { background: #171717; border: none; }
+            QLabel#brand { font-size: 19px; font-weight: 800; color: #ff3333; padding: 5px 0 16px 0; }
+            QLabel#heading { font-size: 22px; font-weight: 700; padding: 3px 0; }
+            QLabel#subheading { font-size: 11px; color: #aaaaaa; padding-bottom: 8px; }
+            QListWidget#navigation::item { padding: 12px 12px; margin: 2px 0; border-radius: 8px; color: #cccccc; }
+            QListWidget#navigation::item:selected { background: #3a2020; color: #ffffff; border-left: 3px solid #ff3333; }
+            QListWidget#navigation::item:hover { background: #292929; }
+            QGroupBox { border: 1px solid #343434; border-radius: 12px; margin-top: 18px; padding: 12px; font-weight: 600; background: #1a1a1a; }
+            QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 7px; color: #f1f1f1; }
             QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
-                background: #18283c; border: 1px solid #3b5872; color: white; border-radius: 7px; padding: 8px;
+                background: #222; border: 1px solid #414141; border-radius: 8px; padding: 9px; color: #f1f1f1;
             }
-            QPushButton { background: #137b90; color: white; border-radius: 8px; padding: 10px; font-weight: 700; }
-            QPushButton:hover { background: #1a96aa; }
-            QPushButton:disabled { background: #3b5261; }
-            QCheckBox { padding: 7px; }
+            QLineEdit:focus, QPlainTextEdit:focus { border-color: #ff4444; }
+            QPushButton { background: #373737; color: white; border: 1px solid #4a4a4a; border-radius: 18px; padding: 10px 15px; font-weight: 600; }
+            QPushButton:hover { background: #505050; }
+            QPushButton:pressed { background: #bb1f1f; }
+            QPushButton:disabled { background: #242424; color: #6f6f6f; }
+            QCheckBox { padding: 6px; }
             QScrollArea { border: none; }
+            QSlider::groove:horizontal { height: 6px; background: #474747; border-radius: 3px; }
+            QSlider::handle:horizontal { background: #ff4545; width: 14px; margin: -5px 0; border-radius: 7px; }
         """)
         self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
 
@@ -218,7 +256,7 @@ class MainWindow(QMainWindow):
 
     def refresh_sources(self):
         self.research_saved.setPlainText("\n".join(
-            f"#{v['id']} · {v['creator']} · {v['niche'] or 'Chưa chọn ngách'} · {v['url']}"
+            f"#{v['id']} · {v['niche'] or 'Chưa chọn ngách'} · {v['url']}"
             for v in self.store.sources()) or "Chưa lưu nguồn")
 
     def build_download(self, layout):
