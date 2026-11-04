@@ -1,11 +1,11 @@
 name: Build Windows desktop EXE
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/v*']
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -20,7 +20,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          choco install ffmpeg --no-progress -y
+          choco install ffmpeg --version=9.0.2 --no-progress -y --allow-downgrade
           if ($LASTEXITCODE -ne 0) { throw 'Chocolatey FFmpeg installation failed' }
           $chocoRoot = if ($env:ChocolateyInstall) { $env:ChocolateyInstall } else { 'C:\ProgramData\chocolatey' }
           $toolsDir = Join-Path $chocoRoot 'lib\ffmpeg\tools'
@@ -48,6 +48,10 @@ jobs:
           Copy-Item vendor/bin/ffmpeg.exe dist/DouyinhehePro/bin/ffmpeg.exe -Force
           Copy-Item vendor/bin/ffprobe.exe dist/DouyinhehePro/bin/ffprobe.exe -Force
           Copy-Item docs/THIRD_PARTY.md dist/DouyinhehePro/THIRD_PARTY.md -Force
+          & ./dist/DouyinhehePro/bin/ffmpeg.exe -buildconf | Out-File -Encoding utf8 dist/DouyinhehePro/FFMPEG_BUILDINFO.txt
+          $ffmpegSource = "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz"
+          "FFmpeg Chocolatey version: 9.0.2`nSource: $ffmpegSource`nActual build configuration: see FFMPEG_BUILDINFO.txt" |
+            Out-File -Encoding utf8 dist/DouyinhehePro/FFMPEG_SOURCE.txt
           if (-not (Test-Path dist/DouyinhehePro/DouyinhehePro.exe)) { throw 'Missing EXE' }
       - name: Windows portable smoke tests
         shell: pwsh
@@ -59,14 +63,47 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ffmpeg smoke test failed' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
+          & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged downloader diagnostics failed' }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
       - name: ZIP portable release folder
         shell: pwsh
         run: Compress-Archive -Path dist/DouyinhehePro -DestinationPath DouyinhehePro-Windows-x64.zip -CompressionLevel Optimal
+      - name: Write SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -Path DouyinhehePro-Windows-x64.zip).Hash.ToLowerInvariant()
+          "$hash  DouyinhehePro-Windows-x64.zip" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          Get-Content SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: DouyinhehePro-Windows-x64
-          path: DouyinhehePro-Windows-x64.zip
+          path: |
+            DouyinhehePro-Windows-x64.zip
+            SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub Release on protected release branch
+        if: startsWith(github.ref, 'refs/heads/release/v') && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^release/', ''
+          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release tag: $tag" }
+          gh release create $tag DouyinhehePro-Windows-x64.zip SHA256SUMS.txt `
+            --target "${{ github.sha }}" --title "Douyinhehe Pro $tag · Windows x64" `
+            --notes-file docs/RELEASE_NOTES.md --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release upload failed' }
+      - name: Try updating public repo description and topics
+        if: startsWith(github.ref, 'refs/heads/release/v') && github.event_name == 'push'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $body = @{description='Windows video affiliate studio: licensed Douyin, FFmpeg, Vietnamese subtitles and scheduling';topics=@('ffmpeg','pyside6','subtitle','affiliate','vietnamese')} | ConvertTo-Json -Compress
+          $body | gh api -X PATCH "repos/${{ github.repository }}" --input -
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'GITHUB_TOKEN lacks repository Administration write; set metadata manually in repository Settings/About.' }

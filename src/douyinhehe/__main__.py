@@ -23,9 +23,23 @@ def self_test() -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="DouyinhehePro")
     parser.add_argument("--self-test", action="store_true", help="Check packaged dependencies, then exit")
+    parser.add_argument("--version", action="store_true", help="Print application version")
+    parser.add_argument("--doctor", action="store_true", help="Check downloader and local video tools")
     args = parser.parse_args()
+    if args.version:
+        from . import __version__
+        print(__version__)
+        return
     if args.self_test:
         raise SystemExit(self_test())
+    if args.doctor:
+        from .diagnostics import downloader_status
+        from .media import find_binary
+        import json
+        print(json.dumps({"yt_dlp": downloader_status().__dict__,
+                          "ffmpeg": find_binary("ffmpeg"), "ffprobe": find_binary("ffprobe")},
+                         ensure_ascii=False, indent=2))
+        return
     from .app import launch
 
     launch()
