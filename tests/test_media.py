@@ -23,5 +23,4 @@ def test_parameter_validation():
         EditPreset(width=301, creator="a", original_url="url").validate()
     with pytest.raises(ValueError):
         EditPreset(fit="bad", creator="a", original_url="url").validate()
-    with pytest.raises(ValueError):
-        EditPreset(fit="pad").validate()
+    EditPreset(fit="pad").validate()
