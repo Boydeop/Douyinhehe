@@ -20,7 +20,7 @@ from .downloader import parse_douyin_urls
 from .media import EditPreset, probe_video, render_video
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm"}
-REQUIRED_COLUMNS = ("file", "original_url", "creator", "evidence")
+REQUIRED_COLUMNS = ("file", "original_url")
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,9 @@ class BatchItem:
     expires_on: str = ""
     evidence_file: Path | None = None
     evidence_sha256: str = ""
+    masks: str = ""
+    trim_start: float = 0.0
+    trim_end: float | None = None
 
     def validate(self) -> None:
         LicenseGrant(self.original_url, self.creator, self.evidence,
@@ -54,20 +57,28 @@ class BatchItem:
         self.preset().validate()
 
     def preset(self) -> EditPreset:
-        return EditPreset(creator=self.creator, original_url=self.original_url,
+        from .studio_engine import parse_regions
+        return EditPreset(creator="", original_url=self.original_url,
                           fit=self.fit, cta=self.cta, subtitle=self.subtitle,
                           brightness=self.brightness, contrast=self.contrast,
-                          saturation=self.saturation)
+                          saturation=self.saturation, masks=parse_regions(self.masks),
+                          trim_start=self.trim_start, trim_end=self.trim_end)
 
     def payload(self) -> dict:
         result = asdict(self)
-        for key in ("file", "subtitle", "evidence_file"):
+        for key in ("file", "subtitle"):
             result[key] = str(result[key]) if result[key] is not None else None
+        for key in ("creator", "evidence", "expires_on", "evidence_file", "evidence_sha256"):
+            result.pop(key, None)
+        result["creator"] = ""
+        result["evidence"] = ""
         return result
 
     @classmethod
     def from_payload(cls, row: dict) -> "BatchItem":
         row = dict(row)
+        row.setdefault("creator", "")
+        row.setdefault("evidence", "")
         row["file"] = Path(row["file"])
         if row.get("subtitle"):
             row["subtitle"] = Path(row["subtitle"])
@@ -108,7 +119,7 @@ def read_manifest(path: Path, *, limit: int = 500) -> list[BatchItem]:
         if not isinstance(row, dict):
             raise ValueError(f"Dòng {i} phải là một object.")
         if not all(row.get(key) for key in REQUIRED_COLUMNS):
-            raise ValueError(f"Dòng {i} thiếu video, tác giả, URL hoặc bằng chứng cấp phép.")
+            raise ValueError(f"Dòng {i} thiếu file hoặc URL nguồn.")
         try:
             file = Path(row["file"])
             if not file.is_absolute():
@@ -121,7 +132,7 @@ def read_manifest(path: Path, *, limit: int = 500) -> list[BatchItem]:
                 evidence_file = manifest.parent / evidence_file
             item = BatchItem(
                 file=file.resolve(), original_url=str(row["original_url"]).strip(),
-                creator=str(row["creator"]).strip(), evidence=str(row["evidence"]).strip(),
+                creator="", evidence="",
                 commercial=_bool(row.get("commercial", False), "commercial"),
                 derivative=_bool(row.get("derivative", False), "derivative"),
                 platforms=str(row.get("platforms") or "facebook,tiktok,youtube,instagram,threads"),
@@ -130,9 +141,11 @@ def read_manifest(path: Path, *, limit: int = 500) -> list[BatchItem]:
                 brightness=float(row.get("brightness") or 0),
                 contrast=float(row.get("contrast") or 1),
                 saturation=float(row.get("saturation") or 1),
-                expires_on=str(row.get("expires_on") or ""),
-                evidence_file=evidence_file.resolve() if evidence_file else None,
-                evidence_sha256=str(row.get("evidence_sha256") or ""),
+                expires_on="", evidence_file=None, evidence_sha256="",
+                masks=(json.dumps(row["masks"]) if isinstance(row.get("masks"), list)
+                       else str(row.get("masks") or "")),
+                trim_start=float(row.get("trim_start") or 0),
+                trim_end=(float(row["trim_end"]) if row.get("trim_end") not in (None, "", "0") else None),
             )
             item.validate()
             result.append(item)
@@ -181,11 +194,8 @@ def run_queue(store: Store, outdir: Path, progress: Callable[[str], None] | None
             meta = probe_video(dest)
             sidecar = {
                 "schema": "douyinhehe.provenance.v2", "created_at": now_utc(),
-                "source_url": item.original_url, "creator": item.creator,
-                "grant_evidence": item.evidence, "commercial": item.commercial,
+                "source_url": item.original_url, "commercial": item.commercial,
                 "derivative": item.derivative, "platforms": item.platforms,
-                "expires_on": item.expires_on,
-                "evidence_sha256": file_sha256(item.evidence_file) if item.evidence_file else "",
                 "niche": item.niche, "source_sha256": source_hash,
                 "output_sha256": _sha256(dest),
                 "streams": [{"codec_type": s.get("codec_type"), "codec_name": s.get("codec_name"),
@@ -204,27 +214,25 @@ def run_queue(store: Store, outdir: Path, progress: Callable[[str], None] | None
     return {"done": done, "failed": failed, "pending": store.render_counts().get("pending", 0)}
 
 
-def create_local_manifest(folder: Path, manifest: Path, *, creator: str, evidence: str,
-                          rights_confirmed: bool, expires_on: str = "") -> Path:
+def create_local_manifest(folder: Path, manifest: Path, *, creator: str = "", evidence: str = "",
+                          rights_confirmed: bool = False, expires_on: str = "") -> Path:
     """Import self-shot or otherwise licensed local clips without a Douyin URL."""
     if not rights_confirmed:
         raise PermissionError("Phải xác nhận quyền dùng thương mại và biên tập video nguồn.")
     folder = Path(folder).resolve()
-    if not folder.is_dir() or not creator.strip() or not evidence.strip():
-        raise ValueError("Cần thư mục video, tác giả và bằng chứng quyền sử dụng.")
+    if not folder.is_dir():
+        raise ValueError("Cần thư mục video hợp lệ.")
     files = [p for p in sorted(folder.iterdir()) if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS]
     if not 1 <= len(files) <= 500:
         raise ValueError("Chỉ hỗ trợ từ 1 đến 500 video hợp lệ mỗi lần nhập.")
     rows = [{"file": str(path), "original_url": "local://" + _sha256(path),
-             "creator": creator, "evidence": evidence, "commercial": True,
-             "derivative": True, "expires_on": expires_on} for path in files]
+             "commercial": True, "derivative": True} for path in files]
     dest = Path(manifest).resolve()
     if dest.suffix.lower() != ".json":
         raise ValueError("Manifest xuất cần đuôi .json.")
     # Only write after every grant passes validation.
     for row in rows:
-        LicenseGrant(row["original_url"], creator, evidence, True, True,
-                     expires_on=expires_on).validate()
+        LicenseGrant(row["original_url"], "", "", True, True).validate()
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(".tmp")
     part.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
