@@ -11,6 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+from .studio_engine import MaskRegion, parse_regions, mask_filter_chain
 
 
 def find_binary(name: str) -> str:
@@ -63,6 +64,9 @@ class EditPreset:
     cta_background: str = "#101827"
     cta_foreground: str = "#FFFFFF"
     cta_font_size: int = 40
+    masks: tuple[MaskRegion, ...] = ()
+    trim_start: float = 0.0
+    trim_end: float | None = None
 
     def validate(self) -> None:
         if self.width < 256 or self.height < 256 or self.width % 2 or self.height % 2:
@@ -75,8 +79,11 @@ class EditPreset:
             raise ValueError("Độ bão hòa màu vượt giới hạn.")
         if len(self.cta) > 140 or len(self.creator) > 140:
             raise ValueError("CTA/tên tác giả quá dài.")
-        if not self.creator.strip() or not self.original_url.strip():
-            raise ValueError("Phải cung cấp tác giả và URL nguồn trong bản xuất.")
+        parse_regions(self.masks)
+        if not 0 <= self.trim_start <= 36000:
+            raise ValueError("Mốc bắt đầu phải trong 0 đến 36000 giây.")
+        if self.trim_end is not None and not self.trim_start < self.trim_end <= 36000:
+            raise ValueError("Mốc kết thúc cần lớn hơn mốc bắt đầu.")
         if self.subtitle and not self.subtitle.is_file():
             raise FileNotFoundError(self.subtitle)
         if self.narration and not self.narration.is_file():
@@ -128,7 +135,7 @@ def make_overlay(preset: EditPreset, target: Path) -> None:
     for index, line in enumerate(lines):
         draw.text((pad + 20, top + 12 + index * step), line, fill=(*rgb_fg, 255),
                   font=_font(preset.cta_font_size))
-    source = f"Nguồn: {preset.creator} | {'Video tự quay' if preset.original_url.startswith('local://') else 'Douyin'}"
+    source = "Video tự quay" if preset.original_url.startswith("local://") else "Nguồn: Douyin"
     draw.rounded_rectangle((pad, pad, preset.width - pad, pad + 64), radius=12, fill=(0, 0, 0, 160))
     draw.text((pad + 12, pad + 9), source[:90], fill=(255, 255, 255, 255), font=_font(29))
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -159,19 +166,27 @@ def build_edit_command(source: Path, output: Path, overlay: Path, preset: EditPr
             f"saturation={preset.saturation}[v1]")
     chain = f"{video};{look}"
     subtitle_node = "v1"
+    masks, masked_node = mask_filter_chain("v1", preset.masks, w, h)
+    if masks:
+        chain += ";" + masks
+        subtitle_node = masked_node
     if preset.subtitle:
-        chain += f";[v1]{_subtitle_filter(preset.subtitle)}[vs]"
+        chain += f";[{subtitle_node}]{_subtitle_filter(preset.subtitle)}[vs]"
         subtitle_node = "vs"
     chain += f";[{subtitle_node}][1:v]overlay=0:0:format=auto:shortest=1,format=yuv420p[vout]"
-    cmd = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", str(source), "-loop", "1",
-           "-i", str(overlay)]
+    cmd = [ffmpeg, "-hide_banner", "-nostdin", "-y"]
+    if preset.trim_start:
+        cmd += ["-ss", str(preset.trim_start)]
+    cmd += ["-i", str(source), "-loop", "1", "-i", str(overlay)]
     if preset.narration:
         cmd += ["-i", str(preset.narration)]
     cmd += ["-filter_complex", chain, "-map", "[vout]"]
     cmd += ["-map", "2:a:0"] if preset.narration else ["-map", "0:a?"]
+    if preset.trim_end is not None:
+        cmd += ["-t", str(preset.trim_end - preset.trim_start)]
     cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p",
             "-r", "30", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-movflags", "+faststart",
-            "-shortest", "-metadata", f"comment=Original: {preset.original_url}; Credit: {preset.creator}",
+            "-shortest", "-metadata", f"comment=Source: {preset.original_url or 'local'}",
             str(output)]
     return cmd
 
