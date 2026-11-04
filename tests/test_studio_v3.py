@@ -23,7 +23,8 @@ def test_non_ocr_fallback_is_labelled(tmp_path):
     Image.new("RGB",(360,640),"black").save(image)
     regions,message=suggest_chinese_regions(image)
     assert isinstance(message,str) and message
-    for r in regions: r.validate()
+    for region in regions:
+        region.validate()
 
 def test_channel_url_validation():
     assert is_channel_url("https://www.douyin.com/user/MS4wLjABCD")
