@@ -1,32 +1,36 @@
-# Douyinhehe Pro v2.1.0 · Engineering Preview
+# Douyinhehe Pro v3.0.0 · Engineering Preview
 
-**Windows x64 portable:** download `DouyinhehePro-Windows-x64.zip`, verify the
-SHA-256 against `SHA256SUMS.txt`, then extract the **whole** `DouyinhehePro`
-folder and open `DouyinhehePro.exe`. Do not move the EXE outside that folder.
+**Portable Windows x64:** Download `DouyinhehePro-Windows-x64.zip` and `SHA256SUMS.txt`,
+verify SHA-256, unpack the entire `DouyinhehePro` directory, and run
+`DouyinhehePro.exe`. Keep the `bin` and `_internal` directories alongside it.
 
-Highlights:
-- yt-dlp downloader diagnosis in Vietnamese and a user-confirmed Windows-only
-  downloader update; validates official GitHub asset SHA-256 + checksum manifest.
-- Subtitle readability check (42 characters/line, 20 CPS, 2-line warnings,
-  time overlaps) and a 5-second FFmpeg preview.
-- Per-niche Chinese/Vietnamese glossary, context and optional second Gemini
-  review with cache isolation. No automatic paid fallback.
-- Rights expiration and optional SHA-256 for the original permission file;
-  each batch job rechecks permissions before rendering.
-- Offline Piper adapter (requires your own executable and licensed voice model),
-  in addition to the system voice provider.
-- Brand CTA color, position and font presets, CSV campaign performance by
-  video ID, and import of locally recorded clips.
-- Structured, rotating logs with API-key redaction and downloadable report.
-- Windows + Ubuntu CI, lint, static typing, FFmpeg integration tests and
-  a packaged `--self-test` smoke test.
+## Highlights
+- Douyin downloader supports a multiline URL batch and **full profile**
+  (`douyin.com/user/...`) mode with an explicit unlimited option and
+  persistent `yt-dlp` archive for duplicate avoidance. Profile coverage
+  depends on the extractor, available access and Douyin behavior.
+- No author, contract or license-expiration fields in the new download, video
+  editor and local manifest workflows. New records do not store those fields.
+  A **user-confirmed cleanup action** removes legacy sensitive SQLite metadata.
+  Older exported provenance JSON files are not automatically removed.
+- Mini-editor with YouTube-inspired navigation, frame preview, mouse-drag
+  blur/solid subtitle masks, per-video automatic region proposals, trim,
+  9:16 reframing, color tuning, SRT, narration, CTA and batch rendering.
+- Optional RapidOCR suggests actual regions with recognized Chinese characters.
+  **The portable EXE does not include RapidOCR by default.** Without it, the
+  automatic feature only suggests a generic lower-third and reports that it
+  did not detect text. Always review results.
+- CI: Ubuntu/Windows tests, FFmpeg masked-render regression test, packaged
+  FFmpeg and a Qt UI smoke test for the frozen Windows EXE.
 
-**Important:** Publishing via Meta, TikTok, YouTube, Instagram and Threads requires
-valid account access, OAuth permissions and provider configuration. Cloud
-scheduling requires a server. AI-translated subtitles need a user-provided
-Gemini key and confirmed free-tier eligibility. Credit and edits do not override
-copyright terms or platform originality policies.
+**Boundaries:** This is a small batch editor, **not** a full CapCut multitrack
+editor. License rights must cover commercial reuse, editing and platform
+distribution. Attribution obligations remain applicable. Editing or hiding
+subtitles does not bypass copyright or originality policies. Douyin access
+and social publishing can fail or require account authorization and OAuth.
+Cloud posting after shutdown requires a separate online service; it is
+not provided by the desktop EXE alone.
 
-**License notice:** source is MIT; redistribution of bundled Qt/FFmpeg and other
-components is subject to their separate licenses. See `THIRD_PARTY.md` and
-`FFMPEG_BUILDINFO.txt` inside the ZIP. This prerelease is not code-signed.
+Source license: MIT. Bundled Qt, FFmpeg, other dependencies and optional OCR
+models have their own redistribution obligations; consult third-party notices.
+This engineering preview is not code-signed.

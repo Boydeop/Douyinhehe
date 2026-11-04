@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.0.0 development preview (branch only)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.0.0 engineering preview**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Implemented
 
@@ -30,7 +30,7 @@ pip install -e ".[all,dev]"
 python -m douyinhehe
 ```
 
-**Windows `.exe`:** the portable ZIP now includes the GUI executable, `bin/ffmpeg.exe`, `bin/ffprobe.exe`, and third-party notices, and must pass a frozen `--self-test`. Open [Actions → Build Windows desktop EXE](../../actions/workflows/windows-build.yml), download the `DouyinhehePro-Windows-x64` artifact after a successful run, extract the ZIP and launch `DouyinhehePro.exe`. GitHub Actions must be enabled, and the workflow must succeed before an artifact exists. Its ZIP includes FFmpeg and FFprobe (check `THIRD_PARTY.md`). Latest stable published Release: v2.1.0. Studio 3.0 is not released yet.
+**Windows `.exe`:** the portable ZIP now includes the GUI executable, `bin/ffmpeg.exe`, `bin/ffprobe.exe`, and third-party notices, and must pass a frozen `--self-test`. Open [Actions → Build Windows desktop EXE](../../actions/workflows/windows-build.yml), download the `DouyinhehePro-Windows-x64` artifact after a successful run, extract the ZIP and launch `DouyinhehePro.exe`. GitHub Actions must be enabled, and the workflow must succeed before an artifact exists. Its ZIP includes FFmpeg and FFprobe (check `THIRD_PARTY.md`). The Studio 3.0 Windows engineering-preview build is published under GitHub Releases (v3.0.0).
 
 **Build locally:** `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1`. The output executable is `dist/DouyinhehePro/DouyinhehePro.exe`. Local builds require FFmpeg in PATH unless copied to the `bin/` directory.
 
