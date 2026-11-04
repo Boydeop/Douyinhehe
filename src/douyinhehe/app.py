@@ -21,7 +21,8 @@ from .batch import create_local_manifest, enqueue_manifest, run_queue
 from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
-from .downloader import download_authorized, parse_douyin_urls, is_channel_url
+from .downloader import (download_authorized, parse_douyin_urls, is_channel_url,
+                         classify_douyin_url, f2_worker_executable)
 from .diagnostics import downloader_status, update_ytdlp
 from .subtitle_qc import audit_srt, preview_five_seconds
 from .glossary import load_glossary, save_glossary, validate_glossary
@@ -82,8 +83,9 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio 3.1 · OCR Offline · Affiliate Video Editor")
-        self.setMinimumSize(1160, 780)
+        self.setWindowTitle("Douyinhehe Studio · Video Affiliate Workspace")
+        self.setMinimumSize(1080, 700)
+        self.resize(1450, 900)
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
         self._workers = set()
@@ -94,7 +96,7 @@ class MainWindow(QMainWindow):
         outer.setSpacing(0)
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(210)
+        sidebar.setFixedWidth(228)
         navbox = QVBoxLayout(sidebar)
         navbox.setContentsMargins(12, 20, 12, 15)
         brand = QLabel("▶  DOUYINHEHE")
@@ -120,7 +122,7 @@ class MainWindow(QMainWindow):
         body.addWidget(self.pages, 1)
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
-        self.logs.setMaximumHeight(85)
+        self.logs.setMaximumHeight(110)
         body.addWidget(self.logs)
         outer.addWidget(workspace, 1)
         self.setCentralWidget(root)
@@ -146,30 +148,53 @@ class MainWindow(QMainWindow):
             self.pages.addWidget(scroll)
             self.nav.addItem(title)
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.nav.setCurrentRow(2)
+        self.nav.setCurrentRow(1)
         self.setStyleSheet("""
-            QMainWindow, QWidget { background: #0f0f0f; color: #f1f1f1; font-family: 'Segoe UI'; font-size: 12px; }
-            QFrame#sidebar, QListWidget#navigation { background: #171717; border: none; }
-            QLabel#brand { font-size: 19px; font-weight: 800; color: #ff3333; padding: 5px 0 16px 0; }
-            QLabel#heading { font-size: 22px; font-weight: 700; padding: 3px 0; }
-            QLabel#subheading { font-size: 11px; color: #aaaaaa; padding-bottom: 8px; }
-            QListWidget#navigation::item { padding: 12px 12px; margin: 2px 0; border-radius: 8px; color: #cccccc; }
-            QListWidget#navigation::item:selected { background: #3a2020; color: #ffffff; border-left: 3px solid #ff3333; }
-            QListWidget#navigation::item:hover { background: #292929; }
-            QGroupBox { border: 1px solid #343434; border-radius: 12px; margin-top: 18px; padding: 12px; font-weight: 600; background: #1a1a1a; }
-            QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 7px; color: #f1f1f1; }
-            QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
-                background: #222; border: 1px solid #414141; border-radius: 8px; padding: 9px; color: #f1f1f1;
-            }
-            QLineEdit:focus, QPlainTextEdit:focus { border-color: #ff4444; }
-            QPushButton { background: #373737; color: white; border: 1px solid #4a4a4a; border-radius: 18px; padding: 10px 15px; font-weight: 600; }
-            QPushButton:hover { background: #505050; }
-            QPushButton:pressed { background: #bb1f1f; }
-            QPushButton:disabled { background: #242424; color: #6f6f6f; }
-            QCheckBox { padding: 6px; }
+            QMainWindow, QWidget { background: #0f1117; color: #f4f6f9;
+                font-family: 'Segoe UI'; font-size: 13px; }
+            QFrame#sidebar, QListWidget#navigation { background: #171a22; border: none; }
+            QLabel#brand { font-size: 20px; font-weight: 800; color: #ff5a62; padding: 7px 0 17px 0; }
+            QLabel#heading { font-size: 24px; font-weight: 750; padding: 4px 0; }
+            QLabel#subheading, QLabel#hintText, QLabel#pageDescription {
+                color: #b5bbc8; font-size: 13px; padding: 3px 0; }
+            QLabel#pageTitle { font-size: 24px; font-weight: 750; padding: 4px 0; }
+            QListWidget#navigation::item { padding: 14px 13px; margin: 3px 0;
+                border-radius: 9px; color: #dde2e9; }
+            QListWidget#navigation::item:selected { background: #41262b;
+                color: #ffffff; border-left: 4px solid #fa5f66; }
+            QListWidget#navigation::item:hover { background: #292f3a; }
+            QGroupBox { border: 1px solid #383f4b; border-radius: 12px;
+                margin-top: 20px; padding: 17px 13px 13px 13px; font-weight: 650;
+                background: #1b2029; }
+            QGroupBox::title { subcontrol-origin: margin; left: 15px; top: 3px;
+                padding: 0 7px; color: #f2f5f8; }
+            QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
+            QDateTimeEdit {
+                background: #252b35; border: 1px solid #525b6b;
+                border-radius: 7px; padding: 9px; color: #f4f6f9;
+                selection-background-color: #8c363e; }
+            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {
+                border: 2px solid #ff727b; }
+            QComboBox::drop-down { border: none; width: 28px; }
+            QPushButton { background: #303743; color: #f7f8fa;
+                border: 1px solid #515967; border-radius: 8px;
+                padding: 10px 14px; min-height: 22px; font-weight: 650; }
+            QPushButton:hover { background: #424a56; border-color: #747c8b; }
+            QPushButton:pressed { background: #6e303b; }
+            QPushButton#primaryAction { background: #e34251; color: #ffffff;
+                border: 1px solid #ef6170; font-size: 14px; }
+            QPushButton#primaryAction:hover { background: #f05260; }
+            QPushButton:disabled { background: #2a2d34; color: #9a9faa; }
+            QCheckBox { padding: 9px 3px; spacing: 10px; }
             QScrollArea { border: none; }
-            QSlider::groove:horizontal { height: 6px; background: #474747; border-radius: 3px; }
-            QSlider::handle:horizontal { background: #ff4545; width: 14px; margin: -5px 0; border-radius: 7px; }
+            QScrollBar:vertical { background: #1b2029; width: 12px; }
+            QScrollBar::handle:vertical { background: #495361; border-radius: 6px; }
+            QProgressBar { border: 1px solid #505968; border-radius: 7px;
+                background: #292f39; text-align: center; min-height: 27px; }
+            QProgressBar::chunk { background: #ea4d5e; border-radius: 6px; }
+            QSlider::groove:horizontal { height: 7px; background: #4a515b; border-radius: 3px; }
+            QSlider::handle:horizontal { background: #ff6774; width: 16px; margin: -5px 0; border-radius: 7px; }
+            QToolTip { background: #272d38; color: white; border: 1px solid #6d7887; }
         """)
         self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
 
@@ -181,7 +206,7 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
 
-    def job(self, title, fn, on_done=None):
+    def job(self, title, fn, on_done=None, on_error=None):
         work = Work(fn)
         self._workers.add(work)
         work.signals.progress.connect(self.log)
@@ -195,6 +220,8 @@ class MainWindow(QMainWindow):
         def failure(err):
             self._workers.discard(work)
             self.log(f"✗ {title}: {err}")
+            if on_error:
+                on_error(err)
             QMessageBox.warning(self, title, redact(err)[:1400])
 
         work.signals.completed.connect(success)
@@ -260,34 +287,136 @@ class MainWindow(QMainWindow):
             for v in self.store.sources()) or "Chưa lưu nguồn")
 
     def build_download(self, layout):
-        panel = group("Douyin · Tải nhiều video hoặc nguyên kênh")
-        self.download_urls = paragraph("Dán link video/kênh Douyin, mỗi dòng một URL", 135)
-        self.down_folder = field("Thư mục lưu video", str(user_data_dir() / "downloads"))
-        browse = QPushButton("Chọn thư mục tải")
-        browse.clicked.connect(lambda: self._folder(self.down_folder))
-        self.down_niche = QComboBox()
-        self.down_niche.addItems(KEYWORDS.keys())
+        """Task-first downloader screen: input on left, run configuration on right."""
+        heading = QLabel("Tải video Douyin")
+        heading.setObjectName("pageTitle")
+        layout.addWidget(heading)
+        description = QLabel("Dán link video hoặc hồ sơ. Ứng dụng tự nhận dạng nguồn và chọn engine hỗ trợ.")
+        description.setObjectName("pageDescription")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        row = QWidget()
+        columns = QHBoxLayout(row)
+        columns.setContentsMargins(0, 5, 0, 0)
+        columns.setSpacing(16)
+
+        sources = QGroupBox("01   Nguồn nội dung")
+        src = QVBoxLayout(sources)
+        src.setSpacing(12)
+        self.download_urls = paragraph("Mỗi dòng một URL Douyin. Có thể dán nguyên đoạn chia sẻ.", 145)
+        self.download_urls.setMinimumHeight(145)
+        src.addWidget(QLabel("Liên kết video hoặc kênh"))
+        src.addWidget(self.download_urls)
         self.down_mode = QComboBox()
-        self.down_mode.addItem("Nhiều link video / danh sách", "batch")
-        self.down_mode.addItem("Toàn bộ kênh Douyin", "channel")
+        self.down_mode.addItem("Tự nhận dạng (khuyên dùng)", "auto")
+        self.down_mode.addItem("Chỉ tải video đơn lẻ / danh sách", "batch")
+        self.down_mode.addItem("Tải bài đăng của kênh", "channel")
+        src.addWidget(QLabel("Loại nguồn"))
+        src.addWidget(self.down_mode)
+        self.down_detect = QLabel("Dán URL để kiểm tra loại nguồn.")
+        self.down_detect.setObjectName("hintText")
+        self.down_detect.setWordWrap(True)
+        src.addWidget(self.down_detect)
+        src.addStretch(1)
+
+        rights = QGroupBox("Quyền sử dụng")
+        rights_layout = QVBoxLayout(rights)
+        self.check_commercial = QCheckBox("Video được cấp quyền sử dụng thương mại")
+        self.check_derivative = QCheckBox("Có quyền chỉnh sửa và đăng lại video")
+        rights_layout.addWidget(self.check_commercial)
+        rights_layout.addWidget(self.check_derivative)
+        rights_help = QLabel("Không yêu cầu tải lên hợp đồng hay giấy tờ cá nhân. "
+                             "Bạn tự chịu trách nhiệm tuân thủ quyền sử dụng nội dung và yêu cầu ghi nguồn.")
+        rights_help.setWordWrap(True)
+        rights_help.setObjectName("hintText")
+        rights_layout.addWidget(rights_help)
+        src.addWidget(rights)
+        columns.addWidget(sources, 3)
+
+        options = QGroupBox("02   Cài đặt tải xuống")
+        form = QVBoxLayout(options)
+        form.setSpacing(11)
+        form.addWidget(QLabel("Thư mục lưu"))
+        self.down_folder = field("Thư mục lưu video", str(user_data_dir() / "downloads"))
+        form.addWidget(self.down_folder)
+        browse = QPushButton("Chọn thư mục")
+        browse.clicked.connect(lambda: self._folder(self.down_folder))
+        form.addWidget(browse)
+        form.addWidget(QLabel("Số video tối đa"))
         self.down_limit = QSpinBox()
         self.down_limit.setRange(0, 5000)
-        self.down_limit.setSpecialValueText("0 = toàn kênh (không giới hạn)")
+        self.down_limit.setSpecialValueText("Không giới hạn (chỉ nguyên kênh)")
         self.down_limit.setValue(50)
-        self.check_commercial = QCheckBox("Tôi có quyền khai thác thương mại các video này")
-        self.check_derivative = QCheckBox("Tôi có quyền chỉnh sửa và đăng lại các video này")
-        for name, widget in (("Nguồn", self.download_urls), ("Chế độ", self.down_mode),
-                             ("Tối đa/kênh", self.down_limit), ("Ngách", self.down_niche),
-                             ("Thư mục", self.down_folder), ("", browse),
-                             ("", self.check_commercial), ("", self.check_derivative)):
-            panel.layout().addRow(name, widget)
-        panel.layout().addRow(QLabel(
-            "Không yêu cầu tên tác giả, file hợp đồng hoặc hạn giấy phép.\\n"
-            "Bạn vẫn cần tuân thủ quyền sử dụng và ghi nguồn theo thỏa thuận."))
-        button = QPushButton("TẢI DANH SÁCH / NGUYÊN KÊNH")
-        button.clicked.connect(self.on_download)
-        panel.layout().addRow(button)
-        layout.addWidget(panel)
+        form.addWidget(self.down_limit)
+        form.addWidget(QLabel("Ngách sản phẩm"))
+        self.down_niche = QComboBox()
+        self.down_niche.addItems(KEYWORDS.keys())
+        form.addWidget(self.down_niche)
+        self.down_engine = QLabel("")
+        self.down_engine.setObjectName("hintText")
+        self.down_engine.setWordWrap(True)
+        form.addWidget(self.down_engine)
+        form.addStretch(1)
+        self.down_progress = QProgressBar()
+        self.down_progress.setRange(0, 100)
+        self.down_progress.setValue(0)
+        self.down_progress.setFormat("Sẵn sàng")
+        form.addWidget(self.down_progress)
+        self.down_button = QPushButton("Bắt đầu tải video")
+        self.down_button.setObjectName("primaryAction")
+        self.down_button.setMinimumHeight(45)
+        self.down_button.clicked.connect(self.on_download)
+        form.addWidget(self.down_button)
+        columns.addWidget(options, 2)
+        layout.addWidget(row)
+
+        history = QGroupBox("03   Video đã lưu gần đây")
+        history_layout = QVBoxLayout(history)
+        self.down_history = QPlainTextEdit()
+        self.down_history.setReadOnly(True)
+        self.down_history.setMaximumHeight(125)
+        self.down_history.setPlaceholderText("Video tải xong sẽ xuất hiện trong thư mục đã chọn.")
+        history_layout.addWidget(self.down_history)
+        layout.addWidget(history)
+        self.download_urls.textChanged.connect(self.on_down_urls_change)
+        self.down_mode.currentIndexChanged.connect(self.on_down_urls_change)
+        self.on_down_urls_change()
+        self.refresh_download_history()
+
+    def refresh_download_history(self):
+        rows = [row for row in self.store.sources() if row.get("file_path")]
+        self.down_history.setPlainText("\n".join(
+            Path(v["file_path"]).name + "   ·   " + v["url"] for v in rows[:12]
+        ) or "Chưa có video nào được ghi nhận. Hãy tải nguồn được cấp phép.")
+
+    def on_down_urls_change(self, *_):
+        text = self.download_urls.toPlainText().strip()
+        if not text:
+            self.down_detect.setText("Nhập URL Douyin để xác định chế độ tải.")
+            self.down_engine.setText("Video: yt-dlp    •    Nguyên kênh: F2 chuyên dụng")
+            return
+        try:
+            urls = parse_douyin_urls(text)
+            profiles = sum(is_channel_url(link) for link in urls)
+            videos = len(urls) - profiles
+            mode = self.down_mode.currentData()
+            if mode == "auto":
+                self.down_detect.setText(
+                    f"Nhận diện: {profiles} kênh, {videos} liên kết video. "
+                    "Ứng dụng sẽ chọn đúng engine cho từng URL."
+                )
+            else:
+                self.down_detect.setText(f"Nhận diện: {profiles} kênh, {videos} liên kết video.")
+            ready = f2_worker_executable() is not None
+            self.down_engine.setText(
+                ("F2: đã cài trong bản portable" if ready else
+                 "F2: chưa tìm thấy engine trong thư mục bin") +
+                "   •   yt-dlp: tải video đơn lẻ"
+            )
+        except ValueError as exc:
+            self.down_detect.setText(str(exc))
+            self.down_engine.setText("Hãy nhập liên kết Douyin HTTPS hợp lệ.")
 
     def _folder(self, entry):
         folder = QFileDialog.getExistingDirectory(self, "Chọn thư mục", entry.text())
@@ -301,31 +430,64 @@ class MainWindow(QMainWindow):
                                    self.check_derivative.isChecked()) for url in urls]
             for grant in grants:
                 grant.validate()
-            folder = Path(self.down_folder.text())
+            folder = Path(self.down_folder.text()).expanduser()
             limit = self.down_limit.value()
             mode = self.down_mode.currentData()
             niche = self.down_niche.currentText()
             if mode == "channel" and any(not is_channel_url(url) for url in urls):
-                raise ValueError("Nguyên kênh yêu cầu link Douyin dạng https://www.douyin.com/user/...")
-            if mode == "batch" and not limit:
-                raise ValueError("Chế độ tải nhiều link cần giới hạn video lớn hơn 0.")
+                raise ValueError("Chế độ Nguyên kênh chỉ nhận URL /user/....")
+            if mode == "batch" and any(is_channel_url(url) for url in urls):
+                raise ValueError("Bạn đã dán URL kênh. Chuyển sang Tự nhận diện để dùng F2.")
+            if limit == 0 and any(is_channel_url(url) for url in urls):
+                answer = QMessageBox.question(
+                    self, "Tải không giới hạn",
+                    "Tải toàn bộ nội dung kênh có thể tốn nhiều dung lượng. Tiếp tục?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+            if mode == "batch" and limit == 0:
+                raise ValueError("Video đơn lẻ yêu cầu giới hạn tải lớn hơn 0.")
         except Exception as exc:
             return self.alert(exc)
-        if mode == "channel" and limit == 0:
-            response = QMessageBox.question(
-                self, "Tải nguyên kênh không giới hạn",
-                "Có thể có nhiều video và tốn dung lượng ổ cứng. Bạn muốn tiếp tục?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if response != QMessageBox.StandardButton.Yes:
-                return
+
+        self.down_button.setEnabled(False)
+        self.down_progress.setRange(0, 0)
+        self.down_progress.setFormat("Đang tải...")
         def task(report):
-            count = 0
-            for grant in grants:
-                self.store.save_source(grant, niche)
-                count += len(download_authorized(grant.original_url, folder, grant, self.store,
-                                                  limit, report, mode=mode))
-            return count
-        self.job("Tải Douyin", task, lambda n: (self.log(f"Đã tải {n} video mới"), self.refresh_sources()))
+            completed = 0
+            failed = []
+            for index, grant in enumerate(grants, 1):
+                report(f"Nguồn {index}/{len(grants)}: {grant.original_url}")
+                try:
+                    self.store.save_source(grant, niche)
+                    completed += len(download_authorized(
+                        grant.original_url, folder, grant, self.store, limit, report, mode=mode))
+                except Exception as exc:
+                    failed.append(f"{index}: {redact(str(exc))}")
+                    report(f"Không thành công nguồn {index}: {redact(str(exc))}")
+            return completed, failed
+
+        def done(result):
+            completed, failed = result
+            self.down_button.setEnabled(True)
+            self.down_progress.setRange(0, 100)
+            self.down_progress.setValue(100 if not failed else 0)
+            self.down_progress.setFormat(f"{completed} video mới" if not failed else
+                                         f"{completed} video, {len(failed)} nguồn lỗi")
+            self.refresh_sources()
+            self.refresh_download_history()
+            if failed:
+                QMessageBox.warning(self, "Một số nguồn chưa tải được",
+                                    "\n".join(failed[:8]) + "\nBạn có thể thử từng URL video.")
+            else:
+                QMessageBox.information(self, "Đã hoàn tất", f"Đã ghi nhận {completed} video mới.")
+
+        def failed(_):
+            self.down_button.setEnabled(True)
+            self.down_progress.setRange(0, 100)
+            self.down_progress.setValue(0)
+            self.down_progress.setFormat("Lỗi tải")
+        self.job("Tải Douyin", task, done, on_error=failed)
 
     def build_editor(self, layout):
         studio = QWidget()
