@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from typing import Callable
 
 from .core import LicenseGrant, Store
@@ -43,6 +43,16 @@ def parse_douyin_urls(text: str) -> list[str]:
     if not result:
         raise ValueError("Không tìm thấy URL Douyin HTTPS hợp lệ.")
     return result
+
+
+def selected_video_from_profile(url: str) -> str | None:
+    """Convert the explicit ?vid= selection into a direct video URL."""
+    if not is_channel_url(url):
+        return None
+    matches = parse_qs(urlsplit(url).query).get("vid", [])
+    if len(matches) != 1 or not re.fullmatch(r"[0-9]{12,24}", matches[0]):
+        return None
+    return "https://www.douyin.com/video/" + matches[0]
 
 
 def classify_douyin_url(url: str) -> str:
