@@ -375,6 +375,9 @@ class MainWindow(QMainWindow):
         self.down_button.setMinimumHeight(45)
         self.down_button.clicked.connect(self.on_download)
         form.addWidget(self.down_button)
+        showlog = QPushButton("Xuất nhật ký chẩn đoán (đã che khóa API)")
+        showlog.clicked.connect(self.on_export_logs)
+        form.addWidget(showlog)
         columns.addWidget(options, 2)
         layout.addWidget(row)
 
@@ -402,7 +405,7 @@ class MainWindow(QMainWindow):
         if not text:
             self.down_selected_btn.setEnabled(False)
             self.down_detect.setText("Nhập URL Douyin để xác định chế độ tải.")
-            self.down_engine.setText("Video: yt-dlp    •    Nguyên kênh: F2 chuyên dụng")
+            self.down_engine.setText("Video/link ngắn: F2 ưu tiên, yt-dlp dự phòng    •    Kênh: F2")
             return
         try:
             urls = parse_douyin_urls(text)
@@ -422,7 +425,7 @@ class MainWindow(QMainWindow):
             self.down_engine.setText(
                 ("F2: đã cài trong bản portable" if ready else
                  "F2: chưa tìm thấy engine trong thư mục bin") +
-                "   •   yt-dlp: tải video đơn lẻ"
+                "   •   Video/link ngắn: F2 trước, yt-dlp dự phòng"
             )
         except ValueError as exc:
             self.down_selected_btn.setEnabled(False)
@@ -490,6 +493,9 @@ class MainWindow(QMainWindow):
                 except Exception as exc:
                     failed.append(f"{index}: {redact(str(exc))}")
                     report(f"Không thành công nguồn {index}: {redact(str(exc))}")
+            if failed and completed == 0:
+                raise RuntimeError("Không tải được video. Chi tiết từ engine:\n" +
+                                   "\n".join(failed[:4]))
             return completed, failed
 
         def done(result):
