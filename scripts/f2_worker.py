@@ -41,8 +41,9 @@ def main() -> int:
     folder = Path(args.path).resolve()
     folder.mkdir(parents=True, exist_ok=True)
     from f2.cli.cli_commands import main as f2_cli
-    cli_args = ["dy", "--mode", args.mode, "--url", args.url,
-                "--path", str(folder), "--max-counts", str(args.max_counts)]
+    cli_args = ["dy", "--mode", args.mode, "--url", args.url, "--path", str(folder)]
+    if args.max_counts:
+        cli_args.extend(["--max-counts", str(args.max_counts)])
     f2_cli.main(args=cli_args, standalone_mode=False)
     return 0
 
