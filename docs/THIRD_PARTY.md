@@ -11,3 +11,14 @@ The Douyinhehe source code is MIT. That does **not** relicense bundled third-par
 - Postiz is a **separate connected service** and its self-hosted source is AGPL-3.0. This project does not bundle or redistribute Postiz source code.
 
 GitHub Actions packages FFmpeg from Chocolatey. This pipeline is a test-build foundation, not proof that all licensing conditions for commercial distribution have been met. Before public releases, audit installed packages and provide matching binary licenses/source compliance information.
+
+## Pinned Windows bundle (2.1.0)
+- Chocolatey package `ffmpeg` **9.0.2** (`choco install ffmpeg --version=9.0.2`), with actual
+  build options recorded in `FFMPEG_BUILDINFO.txt` inside the Windows ZIP.
+- FFmpeg 9.0.2 source tarball: <https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz>.
+- This may include GPL components such as x264. For commercial/public distribution,
+  supply the full corresponding source and third-party license notices required by
+  the actual binary build, or replace it with a properly licensed build. Do not
+  assume that a link to core FFmpeg sources alone satisfies all GPL obligations.
+- yt-dlp.exe optional updater verifies both the release asset SHA-256 and
+  `SHA2-256SUMS`, and keeps it outside the frozen application.

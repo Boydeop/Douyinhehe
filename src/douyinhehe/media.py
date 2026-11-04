@@ -59,6 +59,10 @@ class EditPreset:
     original_url: str = ""
     subtitle: Path | None = None
     narration: Path | None = None
+    cta_position: str = "bottom"
+    cta_background: str = "#101827"
+    cta_foreground: str = "#FFFFFF"
+    cta_font_size: int = 40
 
     def validate(self) -> None:
         if self.width < 256 or self.height < 256 or self.width % 2 or self.height % 2:
@@ -77,6 +81,8 @@ class EditPreset:
             raise FileNotFoundError(self.subtitle)
         if self.narration and not self.narration.is_file():
             raise FileNotFoundError(self.narration)
+        from .cta_presets import CTAStyle
+        CTAStyle(self.cta_position, self.cta_background, self.cta_foreground, self.cta_font_size).validate()
 
 
 def _font(size: int):
@@ -113,12 +119,16 @@ def make_overlay(preset: EditPreset, target: Path) -> None:
     if current:
         lines.append(current)
     lines = lines[:3]
-    top = int(preset.height * .74)
-    bottom = min(preset.height - pad, top + 84 * len(lines) + 95)
-    draw.rounded_rectangle((pad, top, preset.width - pad, bottom), radius=24, fill=(0, 0, 0, 178))
+    top = int(preset.height * (.40 if preset.cta_position == "center" else .74))
+    step = int(preset.cta_font_size * 1.75)
+    bottom = min(preset.height - pad, top + step * len(lines) + 95)
+    rgb_bg = tuple(bytes.fromhex(preset.cta_background[1:]))
+    rgb_fg = tuple(bytes.fromhex(preset.cta_foreground[1:]))
+    draw.rounded_rectangle((pad, top, preset.width - pad, bottom), radius=24, fill=(*rgb_bg, 180))
     for index, line in enumerate(lines):
-        draw.text((pad + 20, top + 12 + index * 70), line, fill=(255, 255, 255, 255), font=_font(40))
-    source = f"Nguồn: {preset.creator} | Douyin"
+        draw.text((pad + 20, top + 12 + index * step), line, fill=(*rgb_fg, 255),
+                  font=_font(preset.cta_font_size))
+    source = f"Nguồn: {preset.creator} | {'Video tự quay' if preset.original_url.startswith('local://') else 'Douyin'}"
     draw.rounded_rectangle((pad, pad, preset.width - pad, pad + 64), radius=12, fill=(0, 0, 0, 160))
     draw.text((pad + 12, pad + 9), source[:90], fill=(255, 255, 255, 255), font=_font(29))
     target.parent.mkdir(parents=True, exist_ok=True)

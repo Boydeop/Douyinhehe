@@ -7,7 +7,8 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QDateTime, Qt, Signal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QDateTime, Qt, Signal, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateTimeEdit, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
@@ -16,11 +17,18 @@ from PySide6.QtWidgets import (
 )
 
 from .affiliate import Metrics
-from .batch import enqueue_manifest, run_queue
+from .batch import create_local_manifest, enqueue_manifest, run_queue
 from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
 from .downloader import download_authorized, parse_douyin_urls
+from .diagnostics import downloader_status, update_ytdlp
+from .subtitle_qc import audit_srt, preview_five_seconds
+from .glossary import load_glossary, save_glossary, validate_glossary
+from .logging_support import export_redacted_logs, redact, write_event
+from .cta_presets import CTAStyle, load_preset, save_preset
+from .affiliate_reports import import_report
+from .tts_adapters import get_tts_engine
 from .media import EditPreset, find_binary, render_video
 from .publisher import PostizClient
 from .subtitles import transcribe_to_srt, translate_srt, text_to_voice
@@ -68,7 +76,7 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Pro 2.0 · Affiliate Video Studio")
+        self.setWindowTitle("Douyinhehe Pro 2.1 · Affiliate Video Studio")
         self.setMinimumSize(1050, 760)
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
@@ -128,7 +136,12 @@ class MainWindow(QMainWindow):
         self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
 
     def log(self, msg):
-        self.logs.appendPlainText(str(msg)[:1500])
+        line = redact(str(msg))[:1500]
+        self.logs.appendPlainText(line)
+        try:
+            write_event("desktop", line)
+        except OSError:
+            pass
 
     def job(self, title, fn, on_done=None):
         work = Work(fn)
@@ -144,7 +157,7 @@ class MainWindow(QMainWindow):
         def failure(err):
             self._workers.discard(work)
             self.log(f"✗ {title}: {err}")
-            QMessageBox.warning(self, title, err[:1400])
+            QMessageBox.warning(self, title, redact(err)[:1400])
 
         work.signals.completed.connect(success)
         work.signals.failed.connect(failure)
@@ -153,7 +166,7 @@ class MainWindow(QMainWindow):
 
     def alert(self, error):
         self.log("Lỗi đầu vào: " + str(error))
-        QMessageBox.warning(self, "Dữ liệu chưa hợp lệ", str(error))
+        QMessageBox.warning(self, "Dữ liệu chưa hợp lệ", redact(str(error)))
 
     def chooser(self, entry: QLineEdit, *, save=False, multi=False, filter="Video (*.mp4 *.mov);;All files (*)"):
         if save:
@@ -213,7 +226,9 @@ class MainWindow(QMainWindow):
         self.download_urls = paragraph("Dán link Douyin (mỗi dòng 1 link hoặc nguyên nội dung chia sẻ)", 120)
         panel.layout().addRow("Nguồn video", self.download_urls)
         self.down_creator = field("Tác giả/chủ sở hữu nội dung")
-        self.down_evidence = field("Mã hợp đồng, URL hoặc đường dẫn lưu bằng chứng cấp phép")
+        self.down_evidence = field("Mã hợp đồng hoặc tham chiếu bằng chứng cấp phép")
+        self.down_evidence_file = field("File bằng chứng (tùy chọn, tính SHA-256)")
+        self.down_expiry = field("Hết hạn giấy phép YYYY-MM-DD (bỏ trống nếu không có)")
         self.down_folder = field("Thư mục lưu file", str(user_data_dir() / "downloads"))
         folder_btn = QPushButton("Chọn thư mục")
         folder_btn.clicked.connect(lambda: self._folder(self.down_folder))
@@ -226,6 +241,8 @@ class MainWindow(QMainWindow):
         self.check_derivative = QCheckBox("Tôi có quyền sửa, tái đăng và phân phối theo giấy phép")
         panel.layout().addRow("Tác giả", self.down_creator)
         panel.layout().addRow("Bằng chứng", self.down_evidence)
+        panel.layout().addRow("File bằng chứng", self.down_evidence_file)
+        panel.layout().addRow("Hết hạn", self.down_expiry)
         panel.layout().addRow("Ngách", self.down_niche)
         panel.layout().addRow("Thư mục", self.down_folder)
         panel.layout().addRow(folder_btn)
@@ -246,7 +263,9 @@ class MainWindow(QMainWindow):
         try:
             urls = parse_douyin_urls(self.download_urls.toPlainText())
             grants = [LicenseGrant(url, self.down_creator.text().strip(), self.down_evidence.text().strip(),
-                                  self.check_commercial.isChecked(), self.check_derivative.isChecked()) for url in urls]
+                                  self.check_commercial.isChecked(), self.check_derivative.isChecked(),
+                                  expires_on=self.down_expiry.text().strip(),
+                                  evidence_file=self.down_evidence_file.text().strip()) for url in urls]
             for grant in grants:
                 grant.validate()
             folder = Path(self.down_folder.text())
@@ -275,6 +294,8 @@ class MainWindow(QMainWindow):
         self.edit_creator = field("Tên tác giả gốc để ghi nguồn")
         self.edit_url = field("URL Douyin gốc (hiện trong metadata)")
         self.edit_evidence = field("Bằng chứng có quyền chỉnh sửa và dùng cho affiliate")
+        self.edit_expiry = field("Hết hạn giấy phép YYYY-MM-DD (tùy chọn)")
+        self.edit_evidence_file = field("File bằng chứng cấp phép (tùy chọn)")
         self.edit_authorized = QCheckBox("Xác nhận video đã được cấp quyền biên tập và sử dụng thương mại")
         self.edit_fit = QComboBox()
         self.edit_fit.addItems(["crop", "pad", "blur"])
@@ -290,6 +311,18 @@ class MainWindow(QMainWindow):
         self.edit_saturation.setSingleStep(.1)
         self.edit_saturation.setValue(1)
         self.edit_cta = field("Ví dụ: Link sản phẩm nằm ở trang cá nhân")
+        self.cta_name = field("Tên preset CTA", "Gia dụng")
+        self.cta_position = QComboBox()
+        self.cta_position.addItems(["bottom", "center"])
+        self.cta_background = field("Màu nền #RRGGBB", "#101827")
+        self.cta_foreground = field("Màu chữ #RRGGBB", "#FFFFFF")
+        self.cta_font_size = QSpinBox()
+        self.cta_font_size.setRange(18, 90)
+        self.cta_font_size.setValue(40)
+        save_cta = QPushButton("Lưu preset CTA")
+        save_cta.clicked.connect(self.on_save_cta)
+        load_cta = QPushButton("Nạp preset CTA")
+        load_cta.clicked.connect(self.on_load_cta)
         self.edit_srt = field("Phụ đề .srt tùy chọn (đã dịch sang Việt)")
         srt_btn = QPushButton("Chọn SRT")
         srt_btn.clicked.connect(lambda: self.chooser(self.edit_srt, filter="SRT (*.srt)"))
@@ -298,12 +331,22 @@ class MainWindow(QMainWindow):
         narration_btn.clicked.connect(lambda: self.chooser(self.edit_narration, filter="Audio (*.wav *.mp3)"))
         for label, value in (("Video", self.edit_files), ("", files_btn), ("Xuất", self.edit_out),
                              ("", out_btn), ("Tác giả", self.edit_creator), ("URL nguồn", self.edit_url),
-                             ("Bằng chứng", self.edit_evidence), ("", self.edit_authorized),
+                             ("Bằng chứng", self.edit_evidence), ("File bằng chứng", self.edit_evidence_file),
+                             ("Hết hạn", self.edit_expiry), ("", self.edit_authorized),
                              ("Kiểu khung 9:16", self.edit_fit), ("Độ sáng", self.edit_bright),
                              ("Tương phản", self.edit_contrast), ("Bão hòa", self.edit_saturation),
-                             ("CTA", self.edit_cta), ("Phụ đề", self.edit_srt), ("", srt_btn),
+                             ("CTA", self.edit_cta), ("Preset CTA", self.cta_name),
+                             ("Vị trí CTA", self.cta_position), ("Màu nền", self.cta_background),
+                             ("Màu chữ", self.cta_foreground), ("Cỡ chữ", self.cta_font_size),
+                             ("", save_cta), ("", load_cta), ("Phụ đề", self.edit_srt), ("", srt_btn),
                              ("Thuyết minh", self.edit_narration), ("", narration_btn)):
             panel.layout().addRow(label, value)
+        subtitle_check = QPushButton("KIỂM TRA PHỤ ĐỀ · tốc độ đọc / số dòng")
+        subtitle_check.clicked.connect(self.on_check_srt)
+        preview = QPushButton("XEM TRƯỚC 5 GIÂY CÓ PHỤ ĐỀ")
+        preview.clicked.connect(self.on_subtitle_preview)
+        panel.layout().addRow(subtitle_check)
+        panel.layout().addRow(preview)
         go = QPushButton("RENDER HÀNG LOẠT 1080 × 1920 MP4")
         go.clicked.connect(self.on_render)
         panel.layout().addRow(go)
@@ -321,13 +364,32 @@ class MainWindow(QMainWindow):
                 raise ValueError("Đường dẫn video nguồn phải tồn tại.")
             if not self.edit_authorized.isChecked() or not self.edit_evidence.text().strip():
                 raise PermissionError("Chưa xác nhận quyền sử dụng thương mại và bằng chứng cấp phép.")
+            LicenseGrant(self.edit_url.text().strip(), self.edit_creator.text().strip(),
+                         self.edit_evidence.text().strip(), True, True,
+                         expires_on=self.edit_expiry.text().strip(),
+                         evidence_file=self.edit_evidence_file.text().strip()).validate()
             preset = EditPreset(fit=self.edit_fit.currentText(), brightness=self.edit_bright.value(),
                                 contrast=self.edit_contrast.value(), saturation=self.edit_saturation.value(),
                                 creator=self.edit_creator.text().strip(), original_url=self.edit_url.text().strip(),
                                 cta=self.edit_cta.text(),
+                                cta_position=self.cta_position.currentText(),
+                                cta_background=self.cta_background.text(),
+                                cta_foreground=self.cta_foreground.text(),
+                                cta_font_size=self.cta_font_size.value(),
                                 subtitle=Path(self.edit_srt.text()) if self.edit_srt.text() else None,
                                 narration=Path(self.edit_narration.text()) if self.edit_narration.text() else None)
             preset.validate()
+            if preset.subtitle:
+                issues = audit_srt(preset.subtitle)
+                if any(issue.severity == "error" for issue in issues):
+                    raise ValueError("Phụ đề bị lỗi timecode. Hãy sửa trước khi render.")
+                if issues:
+                    msg = "Có %d cảnh báo phụ đề, vẫn tiếp tục render?\n%s" % (
+                        len(issues), "\n".join(x.detail for x in issues[:5]))
+                    answer = QMessageBox.question(self, "Kiểm tra phụ đề", msg,
+                                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                    if answer != QMessageBox.StandardButton.Yes:
+                        return
             output = Path(self.edit_out.text())
         except Exception as exc:
             return self.alert(exc)
@@ -342,6 +404,45 @@ class MainWindow(QMainWindow):
                 result.append(render_video(path, dest, preset, report))
             return result
         self.job("Render video", task, lambda result: self.log(f"Đã xuất {len(result)} video vào {output}"))
+
+    def on_save_cta(self):
+        try:
+            style = CTAStyle(self.cta_position.currentText(), self.cta_background.text(),
+                             self.cta_foreground.text(), self.cta_font_size.value())
+            path = save_preset(self.cta_name.text().strip(), style)
+            self.log(f"Đã lưu CTA preset: {path}")
+        except Exception as exc:
+            self.alert(exc)
+
+    def on_load_cta(self):
+        try:
+            style = load_preset(self.cta_name.text().strip())
+            self.cta_position.setCurrentText(style.position)
+            self.cta_background.setText(style.background)
+            self.cta_foreground.setText(style.foreground)
+            self.cta_font_size.setValue(style.font_size)
+        except Exception as exc:
+            self.alert(exc)
+
+    def on_check_srt(self):
+        try:
+            path = Path(self.edit_srt.text())
+            issues = audit_srt(path)
+            message = ("Phụ đề đạt kiểm tra độ dài và tốc độ đọc." if not issues else
+                       "\n".join(f"Câu {x.item}: {x.detail}" for x in issues[:30]))
+            QMessageBox.information(self, "Kiểm tra phụ đề", message)
+        except Exception as exc:
+            self.alert(exc)
+
+    def on_subtitle_preview(self):
+        try:
+            video = next(Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip())
+            subtitle = Path(self.edit_srt.text())
+            target = user_data_dir() / "previews" / (video.stem + "-5s.mp4")
+        except (ValueError, StopIteration) as exc:
+            return self.alert(exc)
+        self.job("Xem trước 5 giây", lambda report: preview_five_seconds(video, subtitle, target),
+                 lambda file: QDesktopServices.openUrl(QUrl.fromLocalFile(str(file))))
 
     def build_translation(self, layout):
         panel = group("Nhận dạng Trung → SRT · chạy offline với faster-whisper")
@@ -363,24 +464,58 @@ class MainWindow(QMainWindow):
         self.translate_dest = field("File SRT tiếng Việt")
         self.translate_model = field("Model phải có quyền dùng Free Tier", "gemini-3.1-flash-lite")
         self.translate_confirm = QCheckBox("Tôi xác nhận Gemini project đang ở Free Tier và hiểu hạn mức thực tế")
+        self.translate_niche = QComboBox()
+        self.translate_niche.addItems(["Gia dụng", "Nhà bếp", "Mỹ phẩm"])
+        self.translate_niche.currentTextChanged.connect(self.on_load_glossary)
+        self.translate_context = paragraph("Ví dụ: video hướng dẫn đồ bếp, đối tượng người xem là sinh viên", 70)
+        self.translate_glossary = paragraph("Glossary JSON Trung → Việt", 110)
+        self.translate_review = QCheckBox("Hậu kiểm bản dịch bằng lượt Gemini thứ hai (tốn thêm quota)")
+        save_terms = QPushButton("LƯU GLOSSARY NGÁCH")
+        save_terms.clicked.connect(self.on_save_glossary)
+        self.on_load_glossary()
         browse_srt = QPushButton("Chọn SRT nguồn")
         browse_srt.clicked.connect(lambda: self.chooser(self.translate_src, filter="SRT (*.srt)"))
-        for l, w in (("Nguồn", self.translate_src), ("", browse_srt), ("Đích", self.translate_dest),
-                     ("Model", self.translate_model), ("", self.translate_confirm)):
-            trans.layout().addRow(l, w)
+        for label, w in (("Nguồn", self.translate_src), ("", browse_srt), ("Đích", self.translate_dest),
+                     ("Model", self.translate_model), ("Ngách", self.translate_niche),
+                     ("Glossary JSON", self.translate_glossary), ("", save_terms),
+                     ("Ngữ cảnh", self.translate_context), ("", self.translate_review),
+                     ("", self.translate_confirm)):
+            trans.layout().addRow(label, w)
         btn = QPushButton("DỊCH BẰNG GEMINI (không tự trả phí)")
         btn.clicked.connect(self.on_translate)
         trans.layout().addRow(btn)
         layout.addWidget(trans)
-        voice = group("Lồng tiếng offline · Windows SAPI")
+        voice = group("Lồng tiếng · SAPI/pyttsx3 hoặc Piper local")
         self.voice_text = paragraph("Dán lời thoại tiếng Việt (cần Windows cài giọng tiếng Việt)", 100)
         self.voice_dest = field("Đường dẫn WAV đích", str(user_data_dir() / "voice.wav"))
+        self.voice_engine = QComboBox()
+        self.voice_engine.addItem("Giọng hệ thống (SAPI / pyttsx3)", "system")
+        self.voice_engine.addItem("Piper offline (cần model giọng Việt)", "piper")
+        self.piper_exe = field("Đường dẫn piper.exe")
+        self.piper_model = field("Đường dẫn model Piper .onnx")
+        voice.layout().addRow("Engine", self.voice_engine)
+        voice.layout().addRow("Piper", self.piper_exe)
+        voice.layout().addRow("Model Piper", self.piper_model)
         voice.layout().addRow("Lời thoại", self.voice_text)
         voice.layout().addRow("Xuất", self.voice_dest)
         voice_btn = QPushButton("TẠO GIỌNG ĐỌC VIỆT (.wav)")
         voice_btn.clicked.connect(self.on_voice)
         voice.layout().addRow(voice_btn)
         layout.addWidget(voice)
+
+    def on_load_glossary(self, *_):
+        try:
+            terms = load_glossary(self.translate_niche.currentText())
+            self.translate_glossary.setPlainText(json.dumps(terms, ensure_ascii=False, indent=2))
+        except Exception as exc:
+            self.alert(exc)
+
+    def on_save_glossary(self):
+        try:
+            terms = validate_glossary(json.loads(self.translate_glossary.toPlainText()))
+            self.log("Đã lưu: " + str(save_glossary(self.translate_niche.currentText(), terms)))
+        except Exception as exc:
+            self.alert(exc)
 
     def on_transcribe(self):
         source = Path(self.stt_file.text())
@@ -401,16 +536,26 @@ class MainWindow(QMainWindow):
                 raise ValueError("Chưa lưu Gemini API key ở tab Cài đặt.")
             if source.resolve() == target.resolve():
                 raise ValueError("Phải dùng file SRT đích khác file nguồn.")
+            terms = validate_glossary(json.loads(self.translate_glossary.toPlainText()))
+            context = self.translate_context.toPlainText()
+            review = self.translate_review.isChecked()
         except Exception as exc:
             return self.alert(exc)
         self.job("Dịch phụ đề Gemini", lambda report: translate_srt(source, target, self.store,
-                     api_key=secret, model_name=model, confirmed_free_tier=confirmed),
+                     api_key=secret, model_name=model, confirmed_free_tier=confirmed,
+                     glossary=terms, context=context, review=review),
                  lambda path: (self.log(f"Đã dịch: {path}"), self.edit_srt.setText(str(path))))
 
     def on_voice(self):
         text = self.voice_text.toPlainText()
         target = Path(self.voice_dest.text())
-        self.job("Giọng đọc Việt", lambda report: text_to_voice(text, target),
+        try:
+            engine = get_tts_engine(self.voice_engine.currentData(),
+                                   piper_exe=Path(self.piper_exe.text()),
+                                   piper_model=Path(self.piper_model.text()))
+        except Exception as exc:
+            return self.alert(exc)
+        self.job("Giọng đọc Việt", lambda report: engine.synthesize(text, target),
                  lambda path: (self.log(f"WAV: {path}"), self.edit_narration.setText(str(path))))
 
     def build_affiliate(self, layout):
@@ -441,7 +586,24 @@ class MainWindow(QMainWindow):
         calc.clicked.connect(self.on_metrics)
         metrics.layout().addRow(calc)
         layout.addWidget(metrics)
+        report = group("Báo cáo affiliate CSV theo campaign / video_id / platform")
+        self.affiliate_report = field("CSV có campaign, video_id, platform, views, clicks, orders, commission")
+        report.layout().addRow("CSV", self.affiliate_report)
+        browse = QPushButton("Chọn CSV báo cáo")
+        browse.clicked.connect(lambda: self.chooser(self.affiliate_report, filter="CSV (*.csv)"))
+        report.layout().addRow(browse)
+        run = QPushButton("TỔNG HỢP VIDEO → CLICK → ĐƠN → HOA HỒNG")
+        run.clicked.connect(self.on_affiliate_report)
+        report.layout().addRow(run)
+        self.report_summary = paragraph("Chưa nhập báo cáo", 200)
+        self.report_summary.setReadOnly(True)
+        report.layout().addRow(self.report_summary)
+        layout.addWidget(report)
         self.refresh_products()
+
+    def on_affiliate_report(self):
+        self.job("Báo cáo affiliate", lambda report: import_report(Path(self.affiliate_report.text())),
+                 lambda rows: self.report_summary.setPlainText(json.dumps(rows, ensure_ascii=False, indent=2)))
 
     def on_product(self):
         try:
@@ -575,8 +737,42 @@ class MainWindow(QMainWindow):
                     self.log(str(exc))
         check.clicked.connect(perform_check)
         status.layout().addRow(check)
+        ytdlp_check = QPushButton("KIỂM TRA yt-dlp")
+        ytdlp_check.clicked.connect(self.on_downloader_check)
+        ytdlp_update = QPushButton("CẬP NHẬT yt-dlp CHÍNH THỨC · checksum SHA-256")
+        ytdlp_update.clicked.connect(self.on_downloader_update)
+        status.layout().addRow(ytdlp_check)
+        status.layout().addRow(ytdlp_update)
+        logs_button = QPushButton("XUẤT LOG ĐÃ CHE API KEY")
+        logs_button.clicked.connect(self.on_export_logs)
+        status.layout().addRow(logs_button)
         status.layout().addRow(QLabel("Thư mục dữ liệu: " + str(user_data_dir())))
         layout.addWidget(status)
+
+    def on_downloader_check(self):
+        status = downloader_status()
+        message = f"Phiên bản: {status.version or 'chưa có'}\nNguồn: {status.origin}\n{status.diagnostic}"
+        QMessageBox.information(self, "Kiểm tra yt-dlp", message)
+
+    def on_downloader_update(self):
+        answer = QMessageBox.question(self, "Cập nhật yt-dlp", "Tải yt-dlp.exe từ GitHub chính thức, "
+                                      "xác minh 2 nguồn SHA-256 và lưu vào thư mục người dùng?\n"
+                                      "Không thay đổi file .exe của Douyinhehe.",
+                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            self.job("Cập nhật yt-dlp", lambda report: update_ytdlp(confirmed=True),
+                     lambda status: self.log(status.diagnostic + " · " + status.version))
+
+    def on_export_logs(self):
+        target, _ = QFileDialog.getSaveFileName(self, "Lưu nhật ký an toàn",
+                            str(user_data_dir() / "Douyinhehe-diagnostics.jsonl"), "JSON Lines (*.jsonl)")
+        if not target:
+            return
+        try:
+            file = export_redacted_logs(Path(target))
+            self.log(f"Đã xuất log đã che khóa: {file}")
+        except Exception as exc:
+            self.alert(exc)
 
     def build_batch_queue(self, layout):
         panel = group("Batch 2.0 · Danh sách CSV/JSON · Kiểm soát nguồn cho từng video")
@@ -585,6 +781,11 @@ class MainWindow(QMainWindow):
             "Có thể thêm: niche, platforms, fit, cta, subtitle, brightness, contrast, saturation."
         ))
         self.batch_manifest = field("Đường dẫn CSV/JSON có giấy phép riêng cho mỗi video")
+        self.local_folder = field("Thư mục video tự quay / đã có quyền sử dụng")
+        self.local_creator = field("Chủ sở hữu video local")
+        self.local_evidence = field("Bằng chứng quyền dùng video local")
+        self.local_expiry = field("Hết hạn YYYY-MM-DD (tùy chọn)")
+        self.local_rights = QCheckBox("Tôi xác nhận quyền thương mại và chỉnh sửa các file video local")
         browse = QPushButton("Chọn manifest CSV/JSON")
         browse.clicked.connect(lambda: self.chooser(
             self.batch_manifest, filter="Manifests (*.csv *.json);;All files (*)"))
@@ -592,8 +793,14 @@ class MainWindow(QMainWindow):
         folder = QPushButton("Chọn thư mục xuất")
         folder.clicked.connect(lambda: self._folder(self.batch_out))
         for key, w in (("Manifest", self.batch_manifest), ("", browse),
+                       ("Thư mục local", self.local_folder), ("Tác giả local", self.local_creator),
+                       ("Bằng chứng local", self.local_evidence), ("Hết hạn", self.local_expiry),
+                       ("", self.local_rights),
                        ("Output", self.batch_out), ("", folder)):
             panel.layout().addRow(key, w)
+        make_local = QPushButton("TẠO MANIFEST VIDEO LOCAL")
+        make_local.clicked.connect(self.on_local_manifest)
+        panel.layout().addRow(make_local)
         enqueue = QPushButton("THÊM VÀO HÀNG ĐỢI (loại trùng)")
         enqueue.clicked.connect(self.on_enqueue_manifest)
         process = QPushButton("CHẠY HÀNG ĐỢI · không ghi đè file hợp lệ khi thất bại")
@@ -611,6 +818,19 @@ class MainWindow(QMainWindow):
         panel.layout().addRow(self.batch_view)
         layout.addWidget(panel)
         self.refresh_batch()
+
+    def on_local_manifest(self):
+        try:
+            target = user_data_dir() / "imports" / "local-videos.json"
+            file = create_local_manifest(Path(self.local_folder.text()), target,
+                                         creator=self.local_creator.text(),
+                                         evidence=self.local_evidence.text(),
+                                         rights_confirmed=self.local_rights.isChecked(),
+                                         expires_on=self.local_expiry.text().strip())
+            self.batch_manifest.setText(str(file))
+            self.log("Đã tạo manifest: " + str(file))
+        except Exception as exc:
+            self.alert(exc)
 
     def refresh_batch(self):
         lines = [f"#{j['id']} · {j['status']} · thử {j['attempts']} · "

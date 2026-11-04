@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 2.0.0 engineering preview**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 2.1.0 engineering preview**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Implemented
 
@@ -71,3 +71,29 @@ Some platforms require additional provider settings, consent, creator visibility
 ## Scope & quality policy
 
 This is a reproducible engineering MVP, **not yet a production-proven automation suite**. TikTok, Instagram, YouTube and Meta may require developer app reviews and support different content features. Profile and Group publishing is not assumed available from official APIs. A single `.exe` cannot perform remote scheduling after PC shutdown without a connected online publisher.
+
+
+## Release v2.1.0
+
+[Windows releases](https://github.com/Boydeop/Douyinhehe/releases) include
+`DouyinhehePro-Windows-x64.zip` and `SHA256SUMS.txt` (not a single standalone .exe).
+Run `DouyinhehePro.exe --self-test` or `--doctor` in a Windows terminal to inspect
+bundled FFmpeg/ffprobe and your yt-dlp installation. All update checks are initiated
+by the user. Read [release notes](docs/RELEASE_NOTES.md) and
+[third-party notices](docs/THIRD_PARTY.md) before distribution.
+
+- `Kiểm tra yt-dlp`: reports downloader version and localized access errors.
+- `Cập nhật yt-dlp`: official verified GitHub executable, installed in user data
+  instead of trying to mutate a frozen Python package.
+- `Kiểm tra phụ đề`: character counts, reading speed and a 5-second preview.
+- `Dịch & giọng`: glossary + context + optional paid-quota-consuming second-pass
+  **Free Tier-confirmed** Gemini review; optional local Piper voice model.
+- `Batch Queue`: supports `expires_on`, `evidence_file`, `evidence_sha256` and
+  local `local://` video manifests for users' own recorded footage.
+- `Affiliate`: normalized CSV with `campaign,video_id,platform,views,clicks,orders,commission`.
+- `Batch Editor`: saved local CTA styles, branded color/text position/size.
+- `Cài đặt`: export rotating, redacted JSONL diagnostic log.
+
+These are engineering features with CI coverage. Real-world service access,
+authorization, translation accuracy, GUI accessibility and signed installer
+require separate user acceptance testing.

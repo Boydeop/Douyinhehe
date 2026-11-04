@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import hashlib
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -28,6 +29,14 @@ def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 @dataclass(frozen=True)
 class LicenseGrant:
     original_url: str
@@ -36,6 +45,9 @@ class LicenseGrant:
     commercial: bool
     derivative: bool
     platforms: str = "facebook,tiktok,youtube,instagram,threads"
+    expires_on: str = ""
+    evidence_file: str = ""
+    evidence_sha256: str = ""
 
     def validate(self) -> None:
         if not self.original_url.strip() or not self.creator.strip() or not self.evidence.strip():
@@ -44,6 +56,22 @@ class LicenseGrant:
             raise ValueError("Cần quyền khai thác thương mại và quyền chỉnh sửa nội dung.")
         if not any(x.strip() for x in self.platforms.split(",")):
             raise ValueError("Cần xác định nền tảng được phép phân phối.")
+        if self.expires_on:
+            try:
+                expires = date.fromisoformat(self.expires_on)
+            except ValueError as exc:
+                raise ValueError("Ngày hết hạn giấy phép phải theo YYYY-MM-DD.") from exc
+            if expires < datetime.now(timezone.utc).date():
+                raise PermissionError("Giấy phép đã hết hạn. Không được tải, render hoặc đăng video.")
+        if self.evidence_file:
+            path = Path(self.evidence_file)
+            if not path.is_file():
+                raise FileNotFoundError("Không tìm thấy tệp bằng chứng cấp phép.")
+            actual = file_sha256(path)
+            if self.evidence_sha256 and self.evidence_sha256.lower() != actual:
+                raise PermissionError("Tệp bằng chứng cấp phép đã thay đổi (SHA-256 không khớp).")
+        elif self.evidence_sha256:
+            raise ValueError("Có SHA-256 bằng chứng nhưng thiếu đường dẫn tệp bằng chứng.")
 
 
 def opportunity_score(visual: float, engagement: float, product: float, legibility: float, freshness: float) -> float:
@@ -72,7 +100,9 @@ class Store:
                 evidence TEXT NOT NULL, commercial INTEGER NOT NULL, derivative INTEGER NOT NULL,
                 platforms TEXT NOT NULL, niche TEXT NOT NULL DEFAULT '',
                 score REAL NOT NULL DEFAULT 0, file_path TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                expires_on TEXT NOT NULL DEFAULT '', evidence_file TEXT NOT NULL DEFAULT '',
+                evidence_sha256 TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY, name TEXT NOT NULL, niche TEXT NOT NULL,
@@ -97,6 +127,10 @@ class Store:
                 cache_key TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL
             );
             """)
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(sources)")}
+            for col in ("expires_on", "evidence_file", "evidence_sha256"):
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE sources ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)
@@ -108,14 +142,18 @@ class Store:
         grant.validate()
         with self._connect() as conn:
             conn.execute("""
-                INSERT INTO sources(url,creator,evidence,commercial,derivative,platforms,niche,score,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?)
+                INSERT INTO sources(url,creator,evidence,commercial,derivative,platforms,niche,score,created_at,
+                                    expires_on,evidence_file,evidence_sha256)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(url) DO UPDATE SET creator=excluded.creator,evidence=excluded.evidence,
                 commercial=excluded.commercial,derivative=excluded.derivative,
-                platforms=excluded.platforms,niche=excluded.niche,score=excluded.score
+                platforms=excluded.platforms,niche=excluded.niche,score=excluded.score,
+                expires_on=excluded.expires_on,evidence_file=excluded.evidence_file,
+                evidence_sha256=excluded.evidence_sha256
             """, (grant.original_url.strip(), grant.creator.strip(), grant.evidence.strip(),
                   int(grant.commercial), int(grant.derivative), grant.platforms,
-                  niche, score, now_utc()))
+                  niche, score, now_utc(), grant.expires_on, grant.evidence_file,
+                  file_sha256(Path(grant.evidence_file)) if grant.evidence_file else ""))
             row = conn.execute("SELECT id FROM sources WHERE url=?", (grant.original_url.strip(),)).fetchone()
             return int(row[0])
 
