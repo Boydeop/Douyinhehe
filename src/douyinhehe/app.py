@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(1)
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #0f1117; color: #f4f6f9;
-                font-family: 'Segoe UI'; font-size: 13px; }
+                font-family: 'Segoe UI'; font-size: 14px; }
             QFrame#sidebar, QListWidget#navigation { background: #171a22; border: none; }
             QLabel#brand { font-size: 20px; font-weight: 800; color: #ff5a62; padding: 7px 0 17px 0; }
             QLabel#heading { font-size: 24px; font-weight: 750; padding: 4px 0; }
@@ -173,14 +173,16 @@ class MainWindow(QMainWindow):
                 background: #252b35; border: 1px solid #525b6b;
                 border-radius: 7px; padding: 9px; color: #f4f6f9;
                 selection-background-color: #8c363e; }
-            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {
+            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
+            QSpinBox:focus, QDoubleSpinBox:focus, QDateTimeEdit:focus {
                 border: 2px solid #ff727b; }
             QComboBox::drop-down { border: none; width: 28px; }
             QPushButton { background: #303743; color: #f7f8fa;
                 border: 1px solid #515967; border-radius: 8px;
-                padding: 10px 14px; min-height: 22px; font-weight: 650; }
+                padding: 10px 14px; min-height: 26px; font-weight: 650; }
             QPushButton:hover { background: #424a56; border-color: #747c8b; }
             QPushButton:pressed { background: #6e303b; }
+            QPushButton:focus { border: 2px solid #ff8b95; }
             QPushButton#primaryAction { background: #e34251; color: #ffffff;
                 border: 1px solid #ef6170; font-size: 14px; }
             QPushButton#primaryAction:hover { background: #f05260; }
