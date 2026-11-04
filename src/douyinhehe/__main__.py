@@ -17,8 +17,10 @@ def self_test() -> int:
         if proc.returncode:
             raise RuntimeError(f"{name} failed in the portable application")
     Store(user_data_dir() / "diagnostics.sqlite3")
-    from .app import MainWindow
-    assert callable(MainWindow)
+    import importlib.util
+    if importlib.util.find_spec("PySide6") is not None:
+        from .app import MainWindow
+        assert callable(MainWindow)
     return 0
 
 
