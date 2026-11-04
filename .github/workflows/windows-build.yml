@@ -4,6 +4,9 @@ on:
     branches: [main, 'release/v*']
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
@@ -40,6 +43,17 @@ jobs:
       - name: Build EXE with PyInstaller
         shell: pwsh
         run: ./scripts/build_windows.ps1
+      - name: Build isolated F2 channel worker
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m venv .f2-build
+          & ./.f2-build/Scripts/python.exe -m pip install --disable-pip-version-check 'f2==0.0.1.7' 'pyinstaller>=6,<7'
+          if ($LASTEXITCODE -ne 0) { throw 'F2 isolated dependency install failed' }
+          & ./.f2-build/Scripts/python.exe -m PyInstaller --noconfirm --clean --onefile --console --name DouyinF2Worker --collect-all f2 scripts/f2_worker.py
+          if ($LASTEXITCODE -ne 0) { throw 'F2 worker PyInstaller failed' }
+          & ./dist/DouyinF2Worker.exe --doctor
+          if ($LASTEXITCODE -ne 0) { throw 'F2 worker smoke test failed' }
       - name: Bundle FFmpeg and credits
         shell: pwsh
         run: |
@@ -47,6 +61,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist/DouyinhehePro/bin | Out-Null
           Copy-Item vendor/bin/ffmpeg.exe dist/DouyinhehePro/bin/ffmpeg.exe -Force
           Copy-Item vendor/bin/ffprobe.exe dist/DouyinhehePro/bin/ffprobe.exe -Force
+          Copy-Item dist/DouyinF2Worker.exe dist/DouyinhehePro/bin/DouyinF2Worker.exe -Force
           Copy-Item docs/THIRD_PARTY.md dist/DouyinhehePro/THIRD_PARTY.md -Force
           Copy-Item docs/OCR_OFFLINE.md dist/DouyinhehePro/OCR_OFFLINE.md -Force
           & ./dist/DouyinhehePro/bin/ffmpeg.exe -buildconf | Out-File -Encoding utf8 dist/DouyinhehePro/FFMPEG_BUILDINFO.txt
@@ -71,6 +86,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Frozen FFmpeg masked render failed' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
+          & ./dist/DouyinhehePro/bin/DouyinF2Worker.exe --doctor
+          if ($LASTEXITCODE -ne 0) { throw 'Portable F2 worker unavailable' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor
           if ($LASTEXITCODE -ne 0) { throw 'Packaged downloader diagnostics failed' }
           $env:QT_QPA_PLATFORM = 'offscreen'
@@ -78,9 +95,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
-      - name: ZIP portable release folder
+      - name: ZIP portable release folder (streamed)
         shell: pwsh
-        run: Compress-Archive -Path dist/DouyinhehePro -DestinationPath DouyinhehePro-Windows-x64.zip -CompressionLevel Optimal
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = @'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          folder = Path("dist/DouyinhehePro")
+          assert (folder / "DouyinhehePro.exe").is_file(), "EXE missing"
+          with ZipFile("DouyinhehePro-Windows-x64.zip", "w", ZIP_DEFLATED, compresslevel=6) as archive:
+              for file in sorted(folder.rglob("*")):
+                  if file.is_file():
+                      archive.write(file, file.relative_to("dist"))
+          assert Path("DouyinhehePro-Windows-x64.zip").stat().st_size > 1000000
+          '@
+          $script | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP creation failed' }
       - name: Write SHA-256 checksum
         shell: pwsh
         run: |

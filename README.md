@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.1.0 engineering preview (bundled offline OCR)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.2.0 engineering preview (bundled offline OCR)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Implemented
 
@@ -18,6 +18,12 @@ Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle trans
 | Desktop | PySide6 worker queue, SQLite, OS credential storage, nine feature tabs | Live platform authorizations still need user testing |
 | V2 batch pipeline | CSV/JSON manifests with per-video rights, recoverable render jobs, deduplication, provenance sidecars | Only local edits auto-retry; remote publishing stays manual-approval |
 | V2 delivery QA | Codec/aspect checks and per-platform CTA/source guidance | Guidelines, not platform approval |
+
+## Douyin downloader and UI in v3.2
+
+The desktop now detects Douyin profile links like `https://www.douyin.com/user/<sec_user_id>?vid=...` and routes them to an isolated **F2** channel downloader. Individual video URLs still use yt-dlp. The new Windows portable bundle includes `bin/DouyinF2Worker.exe` built separately from the main application to keep dependencies isolated. The app now opens in the redesigned Download screen with a two-column workflow, clear source/engine status, readable typography, progress feedback and a list of recent files.
+
+F2's presence is verified offline with `DouyinF2Worker.exe --doctor`. This does **not** prove that any particular Douyin profile can be downloaded in real time. If Douyin requires login or rejects access, the app reports the error and does not attempt to bypass protection. See [download UX audit](docs/DOWNLOAD_UX_AUDIT.md). The Windows build in a pull request is experimental until it passes full CI and is published as a Release.
 
 ## Offline Chinese OCR (included in Windows v3.1)
 
