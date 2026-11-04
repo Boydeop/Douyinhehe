@@ -260,36 +260,33 @@ class MainWindow(QMainWindow):
             for v in self.store.sources()) or "Chưa lưu nguồn")
 
     def build_download(self, layout):
-        panel = group("Tải Douyin hàng loạt · video có giấy phép")
-        self.download_urls = paragraph("Dán link Douyin (mỗi dòng 1 link hoặc nguyên nội dung chia sẻ)", 120)
-        panel.layout().addRow("Nguồn video", self.download_urls)
-        self.down_creator = field("Tác giả/chủ sở hữu nội dung")
-        self.down_evidence = field("Mã hợp đồng hoặc tham chiếu bằng chứng cấp phép")
-        self.down_evidence_file = field("File bằng chứng (tùy chọn, tính SHA-256)")
-        self.down_expiry = field("Hết hạn giấy phép YYYY-MM-DD (bỏ trống nếu không có)")
-        self.down_folder = field("Thư mục lưu file", str(user_data_dir() / "downloads"))
-        folder_btn = QPushButton("Chọn thư mục")
-        folder_btn.clicked.connect(lambda: self._folder(self.down_folder))
+        panel = group("Douyin · Tải nhiều video hoặc nguyên kênh")
+        self.download_urls = paragraph("Dán link video/kênh Douyin, mỗi dòng một URL", 135)
+        self.down_folder = field("Thư mục lưu video", str(user_data_dir() / "downloads"))
+        browse = QPushButton("Chọn thư mục tải")
+        browse.clicked.connect(lambda: self._folder(self.down_folder))
         self.down_niche = QComboBox()
         self.down_niche.addItems(KEYWORDS.keys())
+        self.down_mode = QComboBox()
+        self.down_mode.addItem("Nhiều link video / danh sách", "batch")
+        self.down_mode.addItem("Toàn bộ kênh Douyin", "channel")
         self.down_limit = QSpinBox()
-        self.down_limit.setRange(1, 200)
-        self.down_limit.setValue(30)
-        self.check_commercial = QCheckBox("Tôi có quyền khai thác thương mại / affiliate")
-        self.check_derivative = QCheckBox("Tôi có quyền sửa, tái đăng và phân phối theo giấy phép")
-        panel.layout().addRow("Tác giả", self.down_creator)
-        panel.layout().addRow("Bằng chứng", self.down_evidence)
-        panel.layout().addRow("File bằng chứng", self.down_evidence_file)
-        panel.layout().addRow("Hết hạn", self.down_expiry)
-        panel.layout().addRow("Ngách", self.down_niche)
-        panel.layout().addRow("Thư mục", self.down_folder)
-        panel.layout().addRow(folder_btn)
-        panel.layout().addRow("Tối đa/link", self.down_limit)
-        panel.layout().addRow(self.check_commercial)
-        panel.layout().addRow(self.check_derivative)
-        go = QPushButton("TẢI HÀNG LOẠT (chỉ nội dung được cấp phép)")
-        go.clicked.connect(self.on_download)
-        panel.layout().addRow(go)
+        self.down_limit.setRange(0, 5000)
+        self.down_limit.setSpecialValueText("0 = toàn kênh (không giới hạn)")
+        self.down_limit.setValue(50)
+        self.check_commercial = QCheckBox("Tôi có quyền khai thác thương mại các video này")
+        self.check_derivative = QCheckBox("Tôi có quyền chỉnh sửa và đăng lại các video này")
+        for name, widget in (("Nguồn", self.download_urls), ("Chế độ", self.down_mode),
+                             ("Tối đa/kênh", self.down_limit), ("Ngách", self.down_niche),
+                             ("Thư mục", self.down_folder), ("", browse),
+                             ("", self.check_commercial), ("", self.check_derivative)):
+            panel.layout().addRow(name, widget)
+        panel.layout().addRow(QLabel(
+            "Không yêu cầu tên tác giả, file hợp đồng hoặc hạn giấy phép.\\n"
+            "Bạn vẫn cần tuân thủ quyền sử dụng và ghi nguồn theo thỏa thuận."))
+        button = QPushButton("TẢI DANH SÁCH / NGUYÊN KÊNH")
+        button.clicked.connect(self.on_download)
+        panel.layout().addRow(button)
         layout.addWidget(panel)
 
     def _folder(self, entry):
@@ -300,26 +297,35 @@ class MainWindow(QMainWindow):
     def on_download(self):
         try:
             urls = parse_douyin_urls(self.download_urls.toPlainText())
-            grants = [LicenseGrant(url, self.down_creator.text().strip(), self.down_evidence.text().strip(),
-                                  self.check_commercial.isChecked(), self.check_derivative.isChecked(),
-                                  expires_on=self.down_expiry.text().strip(),
-                                  evidence_file=self.down_evidence_file.text().strip()) for url in urls]
+            grants = [LicenseGrant(url, "", "", self.check_commercial.isChecked(),
+                                   self.check_derivative.isChecked()) for url in urls]
             for grant in grants:
                 grant.validate()
             folder = Path(self.down_folder.text())
             limit = self.down_limit.value()
+            mode = self.down_mode.currentData()
             niche = self.down_niche.currentText()
+            if mode == "channel" and any(not is_channel_url(url) for url in urls):
+                raise ValueError("Nguyên kênh yêu cầu link Douyin dạng https://www.douyin.com/user/...")
+            if mode == "batch" and not limit:
+                raise ValueError("Chế độ tải nhiều link cần giới hạn video lớn hơn 0.")
         except Exception as exc:
             return self.alert(exc)
-
+        if mode == "channel" and limit == 0:
+            response = QMessageBox.question(
+                self, "Tải nguyên kênh không giới hạn",
+                "Có thể có nhiều video và tốn dung lượng ổ cứng. Bạn muốn tiếp tục?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if response != QMessageBox.StandardButton.Yes:
+                return
         def task(report):
             count = 0
             for grant in grants:
                 self.store.save_source(grant, niche)
-                files = download_authorized(grant.original_url, folder, grant, self.store, limit, report)
-                count += len(files)
+                count += len(download_authorized(grant.original_url, folder, grant, self.store,
+                                                  limit, report, mode=mode))
             return count
-        self.job("Tải Douyin", task, lambda n: (self.log(f"Đã tải {n} file"), self.refresh_sources()))
+        self.job("Tải Douyin", task, lambda n: (self.log(f"Đã tải {n} video mới"), self.refresh_sources()))
 
     def build_editor(self, layout):
         panel = group("Chỉnh sửa hàng loạt bằng FFmpeg (offline)")
