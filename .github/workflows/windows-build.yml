@@ -67,6 +67,8 @@ jobs:
           if ($models.Count -lt 3) { throw "Bundled OCR model assets missing (found $($models.Count))" }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --ocr-self-test
           if ($LASTEXITCODE -ne 0) { throw 'Frozen OCR inference failed: never publish a broken offline OCR build' }
+          & ./dist/DouyinhehePro/DouyinhehePro.exe --render-self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen FFmpeg masked render failed' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
           & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor

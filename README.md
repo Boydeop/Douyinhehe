@@ -28,7 +28,7 @@ manual masking remains available. A single representative frame does not
 reliably cover every changing subtitle, so review the video before publishing.
 No generic blind mask is applied when OCR is missing or detects no text.
 
-To verify a downloaded portable folder: `DouyinhehePro.exe --ocr-self-test`.
+To verify a downloaded portable folder: `DouyinhehePro.exe --ocr-self-test` and `DouyinhehePro.exe --render-self-test`.
 See [OCR guide](docs/OCR_OFFLINE.md). This package does not require online model
 inference. Model licenses and packaging notices are in `docs/THIRD_PARTY.md`.
 

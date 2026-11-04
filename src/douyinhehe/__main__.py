@@ -24,11 +24,44 @@ def self_test() -> int:
     return 0
 
 
+def packaged_render_smoke_test() -> int:
+    """Render a real synthetic masked clip through the bundled FFmpeg/Pillow."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    from .media import EditPreset, find_binary, render_video, probe_video
+    from .studio_engine import MaskRegion
+
+    with tempfile.TemporaryDirectory(prefix="douyinhehe-studio-smoke-") as root:
+        folder = Path(root)
+        source, output = folder / "original.mp4", folder / "edited.mp4"
+        proc = subprocess.run(
+            [find_binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+             "-f", "lavfi", "-i", "color=c=blue:s=360x640:r=12:d=1",
+             "-t", "1", "-c:v", "mpeg4", str(source)],
+            capture_output=True, timeout=40, check=False,
+        )
+        if proc.returncode:
+            raise RuntimeError("Không tạo được video kiểm thử FFmpeg.")
+        preset = EditPreset(width=360, height=640, fit="pad", creator="",
+                            original_url="local://test", cta="",
+                            masks=(MaskRegion(.1, .7, .8, .12, "blur"),))
+        render_video(source, output, preset)
+        info = probe_video(output)
+        if output.stat().st_size < 1024 or not any(
+            s.get("codec_type") == "video" and s.get("width") == 360 and s.get("height") == 640
+            for s in info.get("streams", ())
+        ):
+            raise RuntimeError("Render kiểm thử không cho ra video hợp lệ.")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="DouyinhehePro")
     parser.add_argument("--self-test", action="store_true", help="Check packaged dependencies, then exit")
     parser.add_argument("--ui-smoke-test", action="store_true", help="Construct UI without opening a window")
     parser.add_argument("--ocr-self-test", action="store_true", help="Run bundled OCR offline inference test")
+    parser.add_argument("--render-self-test", action="store_true", help="Render one synthetic clip using bundled FFmpeg")
     parser.add_argument("--version", action="store_true", help="Print application version")
     parser.add_argument("--doctor", action="store_true", help="Check downloader and local video tools")
     args = parser.parse_args()
@@ -38,6 +71,8 @@ def main() -> None:
         return
     if args.self_test:
         raise SystemExit(self_test())
+    if args.render_self_test:
+        raise SystemExit(packaged_render_smoke_test())
     if args.ocr_self_test:
         from .ocr_support import offline_ocr_smoke_test
         import json
