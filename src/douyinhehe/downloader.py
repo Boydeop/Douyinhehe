@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -97,13 +98,14 @@ def _download_f2(url: str, folder: Path, max_items: int,
         progress("F2: đang xử lý " + ("bài đăng kênh" if mode == "post" else "video đơn lẻ/link ngắn"))
     try:
         proc = subprocess.run(command, cwd=str(root), capture_output=True, text=True,
-                              errors="replace", timeout=3600, check=False)
+                              encoding="utf-8", errors="replace", timeout=3600, check=False,
+                              env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("F2 hết thời gian chờ sau 60 phút, không tự thử lại vô hạn.") from exc
     except OSError as exc:
         raise RuntimeError(f"Không chạy được F2 worker: {type(exc).__name__}") from exc
     from .logging_support import redact
-    diagnostic = redact((proc.stderr or proc.stdout or "")[-1100:]).strip()
+    diagnostic = redact(((proc.stderr or "") + "\\n" + (proc.stdout or ""))[-1600:]).strip()
     if proc.returncode:
         detail = diagnose_failure(diagnostic)
         raise RuntimeError(f"F2 ({mode}) lỗi mã {proc.returncode}. {detail}. "

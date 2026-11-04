@@ -6,11 +6,15 @@ on the command line. Never treat a successful import as verified website access.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="Douyinhehe channel downloader")
     parser.add_argument("--doctor", action="store_true")
     parser.add_argument("--mode", choices=("one", "post"), default="post")

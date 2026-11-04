@@ -10,6 +10,8 @@ from .core import user_data_dir
 
 _LOG_MAX_BYTES = 2 * 1024 * 1024
 _PATTERNS = (
+    (re.compile(r"(?im)(?:cookie|set-cookie)\\s*:\\s*[^\\r\\n]+"), "[REDACTED_COOKIE_HEADER]"),
+    (re.compile(r"(?i)((?:msToken|sessionid|sid_tt|ttwid|a_bogus|x-bogus)\\s*[:=]\\s*)[^\\s&,;]{5,}"), r"\\1[REDACTED]"),
     (re.compile(r"AIza[0-9A-Za-z_-]{20,}"), "[REDACTED_GEMINI_KEY]"),
     (re.compile(r"(?i)(bearer\s+)[0-9a-z_.~+/-]{8,}"), r"\1[REDACTED]"),
     (re.compile(r"(?i)((?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*)[\"']?[^\s,;\"']{5,}"), r"\1[REDACTED]"),
