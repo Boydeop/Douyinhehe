@@ -83,7 +83,7 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio · Video Affiliate Workspace")
+        self.setWindowTitle("Douyinhehe Studio 3.3 RC1 · Video Affiliate Workspace")
         self.setMinimumSize(1080, 700)
         self.resize(1450, 900)
         self.store = Store()
@@ -115,7 +115,7 @@ class MainWindow(QMainWindow):
         heading = QLabel("Thư viện · Studio · Xuất bản")
         heading.setObjectName("heading")
         body.addWidget(heading)
-        intro = QLabel("Douyinhehe 3.2  |  Tải hàng loạt  |  OCR tiếng Trung offline  |  FFmpeg")
+        intro = QLabel("Douyinhehe 3.3 RC1  |  Tải hàng loạt  |  OCR tiếng Trung offline  |  FFmpeg")
         intro.setObjectName("subheading")
         body.addWidget(intro)
         self.pages = QStackedWidget()
