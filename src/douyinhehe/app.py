@@ -22,7 +22,7 @@ from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
 from .downloader import (download_authorized, parse_douyin_urls, is_channel_url,
-                         classify_douyin_url, f2_worker_executable)
+                         classify_douyin_url, f2_worker_executable, selected_video_from_profile)
 from .diagnostics import downloader_status, update_ytdlp
 from .subtitle_qc import audit_srt, preview_five_seconds
 from .glossary import load_glossary, save_glossary, validate_glossary
@@ -308,6 +308,11 @@ class MainWindow(QMainWindow):
         self.download_urls.setMinimumHeight(145)
         src.addWidget(QLabel("Liên kết video hoặc kênh"))
         src.addWidget(self.download_urls)
+        self.down_selected_btn = QPushButton("Chỉ lấy video đang mở từ link kênh (?vid)")
+        self.down_selected_btn.setToolTip("Dùng video được chọn trong link hồ sơ, không tải cả kênh.")
+        self.down_selected_btn.clicked.connect(self.on_download_selected_video)
+        self.down_selected_btn.setEnabled(False)
+        src.addWidget(self.down_selected_btn)
         self.down_mode = QComboBox()
         self.down_mode.addItem("Tự nhận dạng (khuyên dùng)", "auto")
         self.down_mode.addItem("Chỉ tải video đơn lẻ / danh sách", "batch")
@@ -393,6 +398,7 @@ class MainWindow(QMainWindow):
     def on_down_urls_change(self, *_):
         text = self.download_urls.toPlainText().strip()
         if not text:
+            self.down_selected_btn.setEnabled(False)
             self.down_detect.setText("Nhập URL Douyin để xác định chế độ tải.")
             self.down_engine.setText("Video: yt-dlp    •    Nguyên kênh: F2 chuyên dụng")
             return
@@ -400,6 +406,8 @@ class MainWindow(QMainWindow):
             urls = parse_douyin_urls(text)
             profiles = sum(is_channel_url(link) for link in urls)
             videos = len(urls) - profiles
+            self.down_selected_btn.setEnabled(
+                len(urls) == 1 and selected_video_from_profile(urls[0]) is not None)
             mode = self.down_mode.currentData()
             if mode == "auto":
                 self.down_detect.setText(
@@ -415,8 +423,23 @@ class MainWindow(QMainWindow):
                 "   •   yt-dlp: tải video đơn lẻ"
             )
         except ValueError as exc:
+            self.down_selected_btn.setEnabled(False)
             self.down_detect.setText(str(exc))
             self.down_engine.setText("Hãy nhập liên kết Douyin HTTPS hợp lệ.")
+
+    def on_download_selected_video(self):
+        try:
+            urls = parse_douyin_urls(self.download_urls.toPlainText())
+            if len(urls) != 1:
+                raise ValueError("Hãy nhập một URL hồ sơ có video được chọn.")
+            selected = selected_video_from_profile(urls[0])
+            if selected is None:
+                raise ValueError("Link không chứa ?vid= hợp lệ.")
+            self.download_urls.setPlainText(selected)
+            self.down_mode.setCurrentIndex(0)
+            self.log("Đã chọn video đang mở: " + selected)
+        except ValueError as exc:
+            self.alert(exc)
 
     def _folder(self, entry):
         folder = QFileDialog.getExistingDirectory(self, "Chọn thư mục", entry.text())
