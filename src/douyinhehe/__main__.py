@@ -87,6 +87,13 @@ def main() -> None:
         window = MainWindow()
         if window.pages.count() != 9 or window.nav.count() != 9:
             raise RuntimeError("UI navigation missing feature pages")
+        if window.down_mode.currentData() != "auto":
+            raise RuntimeError("Downloader default must detect Douyin URL type")
+        window.download_urls.setPlainText("https://www.douyin.com/user/MS4wLjABCD?vid=123")
+        if "kênh" not in window.down_detect.text().lower():
+            raise RuntimeError("Downloader UI did not recognize a profile URL")
+        if not window.down_button.isEnabled():
+            raise RuntimeError("Download action is not available")
         window.close()
         return
     if args.doctor:
