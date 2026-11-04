@@ -64,7 +64,7 @@ def test_queue_failed_then_retry_then_provenance(tmp_path, monkeypatch):
     assert store.retry_failed_renders() == 1
 
     def fake_render(src, dest, preset, progress=None):
-        assert preset.creator == "Original Creator"
+        assert preset.creator == ""
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(b"synthetic rendered video")
         return dest
@@ -79,7 +79,7 @@ def test_queue_failed_then_retry_then_provenance(tmp_path, monkeypatch):
     evidence = json.loads(saved[0].read_text(encoding="utf-8"))
     assert evidence["source_url"] == "https://www.douyin.com/video/123"
     assert len(evidence["source_sha256"]) == 64
-    assert evidence["creator"] == "Original Creator"
+    assert "creator" not in evidence and "grant_evidence" not in evidence
     assert store.render_counts() == {"done": 1}
 
 
