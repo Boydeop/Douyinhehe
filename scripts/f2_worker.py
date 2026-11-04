@@ -21,7 +21,12 @@ def main() -> int:
     import f2
 
     if args.doctor:
-        print("F2 worker installed:", getattr(f2, "__version__", "unknown"))
+        # Confirm the actual Douyin command is bundled, not only f2.__init__.
+        from f2.cli.cli_commands import main as _cli
+        from f2.apps.douyin import cli as _douyin_cli
+        if not hasattr(_cli, "main") or not hasattr(_douyin_cli, "douyin"):
+            raise RuntimeError("Thiếu lệnh Douyin trong bản đóng gói F2.")
+        print("F2/Douyin command ready:", getattr(f2, "__version__", "unknown"))
         return 0
 
     if not args.url or not args.path or not 0 <= args.max_counts <= 5000:
