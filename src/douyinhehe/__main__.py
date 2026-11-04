@@ -17,12 +17,15 @@ def self_test() -> int:
         if proc.returncode:
             raise RuntimeError(f"{name} failed in the portable application")
     Store(user_data_dir() / "diagnostics.sqlite3")
+    from .app import MainWindow
+    assert callable(MainWindow)
     return 0
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="DouyinhehePro")
     parser.add_argument("--self-test", action="store_true", help="Check packaged dependencies, then exit")
+    parser.add_argument("--ui-smoke-test", action="store_true", help="Construct UI without opening a window")
     parser.add_argument("--version", action="store_true", help="Print application version")
     parser.add_argument("--doctor", action="store_true", help="Check downloader and local video tools")
     args = parser.parse_args()
@@ -32,6 +35,17 @@ def main() -> None:
         return
     if args.self_test:
         raise SystemExit(self_test())
+    if args.ui_smoke_test:
+        import os
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from .app import MainWindow
+        app = QApplication.instance() or QApplication([])
+        window = MainWindow()
+        if window.pages.count() != 9 or window.nav.count() != 9:
+            raise RuntimeError("UI navigation missing feature pages")
+        window.close()
+        return
     if args.doctor:
         from .diagnostics import downloader_status
         from .media import find_binary
