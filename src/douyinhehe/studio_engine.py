@@ -53,7 +53,8 @@ def mask_filter_chain(start: str, regions, width: int, height: int):
             chain.append(f"[{previous}]drawbox=x={x}:y={y}:w={w}:h={h}:color=black@0.92:t=fill[{next_name}]")
         else:
             chain.append(f"[{previous}]split=2[base{i}][crop{i}]")
-            chain.append(f"[crop{i}]crop={w}:{h}:{x}:{y},boxblur=12:1[patch{i}]")
+            radius = max(1, min(12, (w - 2) // 2, (h - 2) // 2))
+            chain.append(f"[crop{i}]crop={w}:{h}:{x}:{y},boxblur={radius}:1[patch{i}]")
             chain.append(f"[base{i}][patch{i}]overlay={x}:{y}:shortest=1[{next_name}]")
         previous = next_name
     return ";".join(chain), previous
