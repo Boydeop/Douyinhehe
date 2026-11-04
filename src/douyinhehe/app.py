@@ -865,8 +865,21 @@ class MainWindow(QMainWindow):
         logs_button = QPushButton("XUẤT LOG ĐÃ CHE API KEY")
         logs_button.clicked.connect(self.on_export_logs)
         status.layout().addRow(logs_button)
+        private = QPushButton("XÓA dữ liệu tác giả / bằng chứng cũ trong SQLite")
+        private.clicked.connect(self.on_scrub_private)
+        status.layout().addRow(private)
         status.layout().addRow(QLabel("Thư mục dữ liệu: " + str(user_data_dir())))
         layout.addWidget(status)
+
+    def on_scrub_private(self):
+        confirm = QMessageBox.question(self, "Xóa dữ liệu riêng tư cũ",
+             "Xóa vĩnh viễn thông tin tác giả, hợp đồng và ngày hết hạn lưu trong SQLite?\n"
+             "Không xóa các video hay file JSON đã xuất ra từ các phiên bản cũ.",
+             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.store.scrub_private_metadata()
+            self.log("Đã xóa metadata riêng tư cũ khỏi SQLite.")
+            self.refresh_sources()
 
     def on_downloader_check(self):
         status = downloader_status()
@@ -894,45 +907,36 @@ class MainWindow(QMainWindow):
             self.alert(exc)
 
     def build_batch_queue(self, layout):
-        panel = group("Batch 2.0 · Danh sách CSV/JSON · Kiểm soát nguồn cho từng video")
-        panel.layout().addRow(QLabel(
-            "Bắt buộc: file, original_url, creator, evidence, commercial=true, derivative=true.\n"
-            "Có thể thêm: niche, platforms, fit, cta, subtitle, brightness, contrast, saturation."
-        ))
-        self.batch_manifest = field("Đường dẫn CSV/JSON có giấy phép riêng cho mỗi video")
-        self.local_folder = field("Thư mục video tự quay / đã có quyền sử dụng")
-        self.local_creator = field("Chủ sở hữu video local")
-        self.local_evidence = field("Bằng chứng quyền dùng video local")
-        self.local_expiry = field("Hết hạn YYYY-MM-DD (tùy chọn)")
-        self.local_rights = QCheckBox("Tôi xác nhận quyền thương mại và chỉnh sửa các file video local")
+        panel = group("Hàng đợi hàng loạt · CSV/JSON hoặc video tự quay")
+        panel.layout().addRow(QLabel("CSV tối thiểu: file, original_url, commercial, derivative.\n"
+                                    "Không yêu cầu tác giả, hợp đồng, ngày hết hạn."))
+        self.batch_manifest = field("Đường dẫn CSV/JSON")
+        self.local_folder = field("Thư mục video local đã có quyền sử dụng")
+        self.local_rights = QCheckBox("Tôi có quyền chỉnh sửa và khai thác thương mại những video này")
         browse = QPushButton("Chọn manifest CSV/JSON")
-        browse.clicked.connect(lambda: self.chooser(
-            self.batch_manifest, filter="Manifests (*.csv *.json);;All files (*)"))
-        self.batch_out = field("Thư mục xuất video và bản ghi nguồn", str(user_data_dir() / "exports"))
-        folder = QPushButton("Chọn thư mục xuất")
-        folder.clicked.connect(lambda: self._folder(self.batch_out))
-        for key, w in (("Manifest", self.batch_manifest), ("", browse),
-                       ("Thư mục local", self.local_folder), ("Tác giả local", self.local_creator),
-                       ("Bằng chứng local", self.local_evidence), ("Hết hạn", self.local_expiry),
-                       ("", self.local_rights),
-                       ("Output", self.batch_out), ("", folder)):
-            panel.layout().addRow(key, w)
-        make_local = QPushButton("TẠO MANIFEST VIDEO LOCAL")
-        make_local.clicked.connect(self.on_local_manifest)
-        panel.layout().addRow(make_local)
-        enqueue = QPushButton("THÊM VÀO HÀNG ĐỢI (loại trùng)")
-        enqueue.clicked.connect(self.on_enqueue_manifest)
-        process = QPushButton("CHẠY HÀNG ĐỢI · không ghi đè file hợp lệ khi thất bại")
-        process.clicked.connect(self.on_batch_run)
-        retry = QPushButton("Thử lại các tác vụ lỗi")
-        retry.clicked.connect(self.on_batch_retry)
-        recovery = QPushButton("Khôi phục tác vụ bị ngắt sau khi thoát ứng dụng")
-        recovery.clicked.connect(self.on_batch_recover)
-        refresh = QPushButton("Làm mới danh sách")
-        refresh.clicked.connect(self.refresh_batch)
-        for btn in (enqueue, process, retry, recovery, refresh):
-            panel.layout().addRow(btn)
-        self.batch_view = paragraph("Hàng đợi trống", 240)
+        browse.clicked.connect(lambda: self.chooser(self.batch_manifest,
+                              filter="Manifest (*.csv *.json);;All files (*)"))
+        self.batch_out = field("Thư mục xuất video", str(user_data_dir() / "exports"))
+        folder_btn = QPushButton("Chọn thư mục xuất")
+        folder_btn.clicked.connect(lambda: self._folder(self.batch_out))
+        for label, w in (("Danh sách", self.batch_manifest), ("", browse),
+                         ("Video local", self.local_folder), ("", self.local_rights),
+                         ("Xuất", self.batch_out), ("", folder_btn)):
+            panel.layout().addRow(label, w)
+        local_btn = QPushButton("TẠO MANIFEST TỪ THƯ MỤC")
+        local_btn.clicked.connect(self.on_local_manifest)
+        panel.layout().addRow(local_btn)
+        for title, callback in (
+            ("THÊM HÀNG ĐỢI (CHỐNG TRÙNG)", self.on_enqueue_manifest),
+            ("CHẠY HÀNG ĐỢI", self.on_batch_run),
+            ("Thử lại các tác vụ lỗi", self.on_batch_retry),
+            ("Khôi phục các tác vụ bị ngắt", self.on_batch_recover),
+            ("Làm mới", self.refresh_batch),
+        ):
+            button = QPushButton(title)
+            button.clicked.connect(callback)
+            panel.layout().addRow(button)
+        self.batch_view = paragraph("Hàng đợi trống", 210)
         self.batch_view.setReadOnly(True)
         panel.layout().addRow(self.batch_view)
         layout.addWidget(panel)
@@ -942,10 +946,7 @@ class MainWindow(QMainWindow):
         try:
             target = user_data_dir() / "imports" / "local-videos.json"
             file = create_local_manifest(Path(self.local_folder.text()), target,
-                                         creator=self.local_creator.text(),
-                                         evidence=self.local_evidence.text(),
-                                         rights_confirmed=self.local_rights.isChecked(),
-                                         expires_on=self.local_expiry.text().strip())
+                                         rights_confirmed=self.local_rights.isChecked())
             self.batch_manifest.setText(str(file))
             self.log("Đã tạo manifest: " + str(file))
         except Exception as exc:
