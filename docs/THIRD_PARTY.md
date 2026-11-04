@@ -5,6 +5,7 @@ The Douyinhehe source code is MIT. That does **not** relicense bundled third-par
 - [PySide6 / Qt](https://www.qt.io/licensing): commonly LGPL-3.0/GPL/commercial depending on modules. Distributors must comply with Qt license notices and relevant obligations, including dynamic linking and replacement rights as applicable.
 - [FFmpeg](https://ffmpeg.org/legal.html): FFmpeg may be LGPL or GPL depending on build configuration and external codec libraries such as libx264. Review the exact binary distribution, include its applicable licenses and corresponding source/offer as required before distributing publicly.
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp): Unlicense, with bundled component notices where applicable.
+- [F2](https://github.com/Johnserf-Seed/f2): Apache-2.0; built as a separately isolated `DouyinF2Worker.exe` process with its own Python dependencies. The package and transitive dependency licenses must be inventoried before public redistribution; an import test does not establish live Douyin access.
 - [Pillow](https://github.com/python-pillow/Pillow): HPND, [httpx](https://github.com/encode/httpx): BSD-3-Clause, [google-genai](https://github.com/googleapis/python-genai): Apache-2.0.
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper): MIT; model weights can have **separate licenses**, check model cards prior to commercial use.
 - [keyring](https://github.com/jaraco/keyring): MIT. Other transitive licenses apply.
