@@ -80,10 +80,10 @@ def suggest_chinese_regions(frame: Path):
                 continue
             xs = [float(v[0]) for v in record[0]]
             ys = [float(v[1]) for v in record[0]]
-            l, t = max(0., min(xs)/width-.02), max(0., min(ys)/height-.01)
-            r, b = min(1., max(xs)/width+.02), min(1., max(ys)/height+.01)
-            if r-l >= .005 and b-t >= .005:
-                regions.append(MaskRegion(l,t,r-l,b-t))
+            left, top = max(0., min(xs)/width-.02), max(0., min(ys)/height-.01)
+            right, bottom = min(1., max(xs)/width+.02), min(1., max(ys)/height+.01)
+            if right-left >= .005 and bottom-top >= .005:
+                regions.append(MaskRegion(left,top,right-left,bottom-top))
         if regions:
             return parse_regions(regions[:12]), "RapidOCR gợi ý vùng có chữ Trung. Hãy xem lại từng vùng."
         return (), "RapidOCR không thấy chữ Trung trên khung xem trước."
