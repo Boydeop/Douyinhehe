@@ -11,6 +11,16 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+
+def validate_source_url(url: str, mode: str) -> None:
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    if (parsed.scheme != "https" or parsed.username or parsed.password or parsed.port or
+            host not in {"douyin.com", "www.douyin.com", "v.douyin.com", "v.iesdouyin.com"}):
+        raise ValueError("Chỉ hỗ trợ URL Douyin HTTPS hoặc link chia sẻ chính thức")
+    if mode == "post" and not parsed.path.startswith("/user/"):
+        raise ValueError("Chế độ post yêu cầu URL hồ sơ Douyin")
+
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         if stream is not None and hasattr(stream, "reconfigure"):
@@ -35,14 +45,10 @@ def main() -> int:
 
     if not args.url or not args.path or not 0 <= args.max_counts <= 5000:
         parser.error("Cần URL, thư mục và số lượng video từ 0 đến 5000")
-    parsed = urlsplit(args.url)
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or host not in {
-        "douyin.com", "www.douyin.com", "v.douyin.com", "v.iesdouyin.com"
-    }:
-        parser.error("Chỉ hỗ trợ liên kết Douyin HTTPS hoặc link chia sẻ Douyin")
-    if args.mode == "post" and not parsed.path.startswith("/user/"):
-        parser.error("Chế độ post yêu cầu URL hồ sơ Douyin")
+    try:
+        validate_source_url(args.url, args.mode)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     folder = Path(args.path).resolve()
     folder.mkdir(parents=True, exist_ok=True)
