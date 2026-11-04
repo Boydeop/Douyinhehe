@@ -25,6 +25,27 @@ The desktop now detects Douyin profile links like `https://www.douyin.com/user/<
 
 F2's presence is verified offline with `DouyinF2Worker.exe --doctor`. This does **not** prove that any particular Douyin profile can be downloaded in real time. If Douyin requires login or rejects access, the app reports the error and does not attempt to bypass protection. See [download UX audit](docs/DOWNLOAD_UX_AUDIT.md). The Windows build in a pull request is experimental until it passes full CI and is published as a Release.
 
+## Douyin download diagnostics (v3.3 development)
+
+The v3.2 downloader routed only profile URLs to F2. **Single-video URLs and
+`https://v.douyin.com/...` short links still used yt-dlp**, causing misleading
+failures when the Douyin extractor was blocked. The v3.3 development branch
+tries the bundled F2 `one` command first for videos and short links; F2
+`post` remains the profile mode. yt-dlp is used when F2 is missing or
+explicitly reports that the URL is unsupported, but not to evade a login,
+CAPTCHA, or HTTP 403/429 access denial.
+
+A downloader process is counted as successful **only when a new MP4 file is
+found**. The GUI shows the engine failure cause and provides an action to
+export sanitized diagnostics. If F2 reports success but produces no new file,
+the message explains possible duplicate files, missing public access or
+missing media. No claim is made that every Douyin URL can be downloaded.
+You still need normal network access and permission to use the video.
+
+See [the 2026 downloader audit](docs/DOWNLOADER_RESEARCH_2026.md).
+The latest user-provided Douyin URLs have **not** been verified as
+downloadable in a live Windows session.
+
 ## Offline Chinese OCR (included in Windows v3.1)
 
 The portable Windows build includes RapidOCR, ONNX Runtime and the actual ONNX
