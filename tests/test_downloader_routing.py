@@ -21,6 +21,14 @@ def test_auto_route_profile_video_and_query():
     assert downloader.is_channel_url(PROFILE)
 
 
+def test_selected_video_from_profile():
+    assert downloader.selected_video_from_profile(PROFILE) == (
+        "https://www.douyin.com/video/7263619345228582203")
+    assert downloader.selected_video_from_profile(VIDEO) is None
+    assert downloader.selected_video_from_profile(
+        "https://www.douyin.com/user/ABC?vid=letters") is None
+
+
 def test_profile_requires_f2_not_ytdlp(tmp_path, monkeypatch):
     monkeypatch.setattr(downloader, "f2_worker_executable", lambda: None)
     monkeypatch.setattr(downloader, "downloader_status",
