@@ -4,6 +4,9 @@ on:
     branches: [main, 'release/v*']
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
@@ -92,9 +95,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
-      - name: ZIP portable release folder
+      - name: ZIP portable release folder (streamed)
         shell: pwsh
-        run: Compress-Archive -Path dist/DouyinhehePro -DestinationPath DouyinhehePro-Windows-x64.zip -CompressionLevel Optimal
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          folder = Path("dist/DouyinhehePro")
+          assert (folder / "DouyinhehePro.exe").is_file(), "EXE missing"
+          with ZipFile("DouyinhehePro-Windows-x64.zip", "w", ZIP_DEFLATED, compresslevel=6) as archive:
+              for file in sorted(folder.rglob("*")):
+                  if file.is_file():
+                      archive.write(file, file.relative_to("dist"))
+          assert Path("DouyinhehePro-Windows-x64.zip").stat().st_size > 1000000
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP creation failed' }
       - name: Write SHA-256 checksum
         shell: pwsh
         run: |

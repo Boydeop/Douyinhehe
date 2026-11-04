@@ -104,7 +104,7 @@ def main() -> None:
         print(json.dumps({"yt_dlp": downloader_status().__dict__,
                           "ocr": check_ocr_assets().__dict__,
                           "ffmpeg": find_binary("ffmpeg"), "ffprobe": find_binary("ffprobe")},
-                         ensure_ascii=False, indent=2))
+                         ensure_ascii=True, indent=2))
         return
     from .app import launch
 
