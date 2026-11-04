@@ -475,12 +475,12 @@ class MainWindow(QMainWindow):
         self.on_load_glossary()
         browse_srt = QPushButton("Chọn SRT nguồn")
         browse_srt.clicked.connect(lambda: self.chooser(self.translate_src, filter="SRT (*.srt)"))
-        for l, w in (("Nguồn", self.translate_src), ("", browse_srt), ("Đích", self.translate_dest),
+        for label, w in (("Nguồn", self.translate_src), ("", browse_srt), ("Đích", self.translate_dest),
                      ("Model", self.translate_model), ("Ngách", self.translate_niche),
                      ("Glossary JSON", self.translate_glossary), ("", save_terms),
                      ("Ngữ cảnh", self.translate_context), ("", self.translate_review),
                      ("", self.translate_confirm)):
-            trans.layout().addRow(l, w)
+            trans.layout().addRow(label, w)
         btn = QPushButton("DỊCH BẰNG GEMINI (không tự trả phí)")
         btn.clicked.connect(self.on_translate)
         trans.layout().addRow(btn)
