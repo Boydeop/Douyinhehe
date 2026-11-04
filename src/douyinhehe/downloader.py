@@ -80,7 +80,7 @@ def _download_f2(url: str, folder: Path, max_items: int,
         raise ValueError("Chế độ F2 phải là video (one) hoặc kênh (post).")
     worker = f2_worker_executable()
     if worker is None:
-        raise FileNotFoundError(
+        raise RuntimeError(
             "Chưa tìm thấy DouyinF2Worker.exe trong thư mục bin. "
             "Hãy dùng bản portable chính thức và giải nén đầy đủ."
         )
@@ -138,7 +138,7 @@ def _download_video_f2(url: str, folder: Path,
 def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Store,
                         max_items: int = 30, progress: Callable[[str], None] | None = None,
                         *, mode: str = "auto") -> list[Path]:
-    """Download only with a recorded grant. Network access is performed by yt-dlp.
+    """Download only with a recorded grant; F2 is primary, yt-dlp is conditional fallback.
 
     Douyin frequently changes access controls. Report failures; no captcha or anti-bot bypass.
     """
