@@ -99,7 +99,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          @'
+          $script = @'
           from pathlib import Path
           from zipfile import ZipFile, ZIP_DEFLATED
           folder = Path("dist/DouyinhehePro")
@@ -109,7 +109,8 @@ jobs:
                   if file.is_file():
                       archive.write(file, file.relative_to("dist"))
           assert Path("DouyinhehePro-Windows-x64.zip").stat().st_size > 1000000
-          '@ | python -
+          '@
+          $script | python -
           if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP creation failed' }
       - name: Write SHA-256 checksum
         shell: pwsh
