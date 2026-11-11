@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.5.0 RC1 integrated preview (F2 routing, video editor, offline OCR, Qt Multimedia)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.6.0 RC1 desktop UI refresh (F2 routing, video editor, offline OCR, Qt Multimedia)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Integrated 3.5 release candidate (November 2026)
 
@@ -18,6 +18,27 @@ and a manual Windows acceptance pass with authorized Douyin links and a
 representative licensed local MP4. Automated tests cannot guarantee live
 Douyin access or commercial distribution rights. See
 [the integration audit](docs/INTEGRATION_AUDIT_2026_11.md).
+
+## 3.6 desktop experience (engineering release candidate)
+
+Native PySide6 interface refactored using a standalone QSS design system with
+accessible contrast and keyboard focus. The desktop shell now has clearer
+navigation, a persistent activity status, contextual tooltips and keyboard
+shortcuts: Ctrl+1 Downloader, Ctrl+2 Editor, Ctrl+3 Subtitles, Ctrl+4 Batch Queue,
+Ctrl+5 Publishing, Ctrl+L focus downloader URL input. The editor explains the
+four-step import → preview → edit → export workflow, and downloads can be
+imported directly into the Studio without browsing files again.
+
+**No cookie file or browser credentials are requested.** On public permitted
+Douyin URLs the bundled F2 worker is attempted first; official yt-dlp is a
+conditional fallback only for unsupported URLs or missing F2. Login/403/429
+and CAPTCHA are not bypassed. This release does **not** include experimental
+unmerged yt-dlp branches or promises that cookie-free access always works.
+For live source-specific problems, export redacted diagnostics from Download.
+
+The interface uses plain Qt widgets, not GPL Fluent UI dependencies or a
+WebEngine browser. Qt Multimedia still depends on Windows media-codec support.
+See [3.6 engineering UX audit](docs/STUDIO_3_6_UX_AUDIT.md).
 
 ## Implemented
 
