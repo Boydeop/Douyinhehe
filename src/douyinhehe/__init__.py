@@ -1,3 +1,3 @@
 """Douyinhehe Studio: desktop video editor engineering preview."""
 
-__version__ = "3.8.0rc1"
+__version__ = "4.0.0rc2"
