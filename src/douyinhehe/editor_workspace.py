@@ -27,6 +27,7 @@ except ImportError:
     MULTIMEDIA_AVAILABLE = False
 
 from .core import user_data_dir
+from .editor_ops import clip_duration, safe_output_path, preview_preset, seconds_label
 from .logging_support import redact
 from .media import EditPreset, probe_video, render_video
 from .studio_engine import extract_preview_frame, suggest_chinese_regions
@@ -41,57 +42,6 @@ OUTPUT_FORMATS = (
     ("Ngang · 16:9 · 720p", 1280, 720),
     ("Vuông · 1:1 · 720p", 720, 720),
 )
-
-
-def clip_duration(info: dict) -> float:
-    """Duration may come from format or from an individual stream."""
-    fields = [info.get("format", {}).get("duration")]
-    fields.extend(s.get("duration") for s in info.get("streams", ()) if s.get("codec_type") == "video")
-    for field in fields:
-        try:
-            duration = float(field)
-            if 0 < duration < 86400:
-                return duration
-        except (ValueError, TypeError):
-            pass
-    return 0.0
-
-
-def safe_output_path(folder: Path, source: Path, reserved: set[Path] | None = None) -> Path:
-    """Allocate a new name. Never overwrite source or an earlier render."""
-    folder, source = Path(folder).resolve(), Path(source).resolve()
-    reserved = reserved if reserved is not None else set()
-    for index in range(1, 10001):
-        suffix = "_edited" if index == 1 else f"_edited_{index}"
-        target = folder / (source.stem + suffix + ".mp4")
-        if target != source and target not in reserved and not target.exists():
-            reserved.add(target)
-            return target
-    raise RuntimeError("Thư mục xuất có quá nhiều tên video trùng.")
-
-
-def preview_preset(preset: EditPreset, *, source_duration: float = 0.0) -> EditPreset:
-    """Restrict a rendered preview to <=5 seconds; no 2-hour preview jobs."""
-    start = preset.trim_start
-    end = start + 5.0
-    if preset.trim_end is not None:
-        end = min(end, preset.trim_end)
-    if source_duration:
-        end = min(end, source_duration)
-    if end - start < 0.12:
-        raise ValueError("Điểm cắt vượt thời lượng video; không thể xem thử.")
-    if preset.width > preset.height:
-        size = (640, 360)
-    elif preset.width == preset.height:
-        size = (480, 480)
-    else:
-        size = (360, 640)
-    return replace(preset, width=size[0], height=size[1], trim_end=end)
-
-
-def seconds_label(ms: int) -> str:
-    secs = max(0, int(ms) // 1000)
-    return f"{secs // 60:02d}:{secs % 60:02d}"
 
 
 class EditorWorkspace(QWidget):
