@@ -22,7 +22,8 @@ from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
 from .downloader import (download_authorized, parse_douyin_urls, is_channel_url,
-                         classify_douyin_url, f2_worker_executable, selected_video_from_profile)
+                         classify_douyin_url, f2_worker_executable, selected_video_from_profile,
+                         offline_downloader_health)
 from .diagnostics import downloader_status, update_ytdlp
 from .subtitle_qc import audit_srt, preview_five_seconds
 from .glossary import load_glossary, save_glossary, validate_glossary
@@ -431,6 +432,10 @@ class MainWindow(QMainWindow):
         self.down_engine.setObjectName("hintText")
         self.down_engine.setWordWrap(True)
         form.addWidget(self.down_engine)
+        check_engine = QPushButton("Kiểm tra bộ tải · Không cần đăng nhập")
+        check_engine.setToolTip("Kiểm tra F2/yt-dlp trên máy, không gửi URL hay cookie lên Douyin")
+        check_engine.clicked.connect(self.on_check_download_engines)
+        form.addWidget(check_engine)
         form.addStretch(1)
         self.down_progress = QProgressBar()
         self.down_progress.setRange(0, 100)
@@ -503,6 +508,18 @@ class MainWindow(QMainWindow):
             self.down_selected_btn.setEnabled(False)
             self.down_detect.setText(str(exc))
             self.down_engine.setText("Hãy nhập liên kết Douyin HTTPS hợp lệ.")
+
+    def on_check_download_engines(self):
+        def report(result):
+            lines = []
+            for name, health in result.items():
+                label = "Sẵn sàng" if health["ready"] else "Cần sửa"
+                lines.append(f"{name}: {label}\n{health['detail']}")
+            QMessageBox.information(
+                self, "Kiểm tra bộ tải ngoại tuyến",
+                "\n\n".join(lines) + "\n\nLưu ý: kết quả này không xác nhận link Douyin tải được.",
+            )
+        self.job("Kiểm tra F2 và yt-dlp", lambda progress: offline_downloader_health(), report)
 
     def _paste_download_links(self):
         text = QApplication.clipboard().text().strip()
