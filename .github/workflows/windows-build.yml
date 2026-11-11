@@ -91,8 +91,12 @@ jobs:
           & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor
           if ($LASTEXITCODE -ne 0) { throw 'Packaged downloader diagnostics failed' }
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --ui-smoke-test
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
+          $smokeMarker = Join-Path $env:RUNNER_TEMP 'douyinhehe-frozen-ui-smoke.ok'
+          Remove-Item -LiteralPath $smokeMarker -ErrorAction SilentlyContinue
+          & ./dist/DouyinhehePro/DouyinhehePro.exe --ui-smoke-test --ui-smoke-file $smokeMarker
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $smokeMarker)) {
+            throw 'Frozen GUI smoke failed or did not write success marker'
+          }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
       - name: Capture native Qt UX screenshots (offscreen)
