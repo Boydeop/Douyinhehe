@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -72,42 +73,74 @@ def f2_worker_executable() -> Path | None:
     return None
 
 
-def _download_channel_f2(url: str, folder: Path, max_items: int,
-                         progress: Callable[[str], None] | None) -> list[Path]:
+def _download_f2(url: str, folder: Path, max_items: int,
+                 progress: Callable[[str], None] | None, *, mode: str) -> list[Path]:
+    """Run the isolated F2 worker in one/post mode and verify actual media output."""
+    if mode not in {"one", "post"}:
+        raise ValueError("Chế độ F2 phải là video (one) hoặc kênh (post).")
     worker = f2_worker_executable()
     if worker is None:
-        raise RuntimeError("Thiếu engine F2 để tải nguyên kênh. Hãy sử dụng bản Windows có DouyinF2Worker.exe trong thư mục bin.")
-    previous = {p.resolve(): (p.stat().st_size, p.stat().st_mtime_ns)
-                for p in folder.rglob("*.mp4") if p.is_file()}
-    args = [str(worker), "--mode", "post", "--url", url,
-            "--path", str(folder.resolve()), "--max-counts", str(max_items)]
-    if progress:
-        progress("Phát hiện URL hồ sơ. Đang tải bằng engine F2 chuyên dụng...")
-    try:
-        result = subprocess.run(args, cwd=str(folder), capture_output=True, text=True,
-                                errors="replace", timeout=3600, check=False)
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("F2 không phản hồi trong 60 phút. Kiểm tra kết nối Douyin.") from exc
-    if result.returncode != 0:
-        from .logging_support import redact
-        message = redact((result.stderr or result.stdout)[-700:])
-        raise RuntimeError("F2 không tải được trang này. " + diagnose_failure(message) + " " + message)
-    downloaded = []
-    for file in folder.rglob("*.mp4"):
-        if not file.is_file():
-            continue
-        stat = file.stat()
-        if previous.get(file.resolve()) != (stat.st_size, stat.st_mtime_ns):
-            downloaded.append(file)
-    if progress:
-        progress(f"F2 hoàn tất: {len(downloaded)} file video mới.")
-    return sorted(downloaded)
+        raise RuntimeError(
+            "Chưa tìm thấy DouyinF2Worker.exe trong thư mục bin. "
+            "Hãy dùng bản portable chính thức và giải nén đầy đủ."
+        )
+    root = folder.resolve()
+    root.mkdir(parents=True, exist_ok=True)
 
+    def snapshot() -> dict[Path, tuple[int, int]]:
+        return {p.resolve(): (p.stat().st_size, p.stat().st_mtime_ns)
+                for p in root.rglob("*.mp4") if p.is_file()}
+
+    previous = snapshot()
+    command = [str(worker), "--mode", mode, "--url", url,
+               "--path", str(root), "--max-counts", str(max_items if mode == "post" else 1)]
+    if progress:
+        progress("F2: đang xử lý " + ("bài đăng kênh" if mode == "post" else "video đơn lẻ/link ngắn"))
+    try:
+        proc = subprocess.run(command, cwd=str(root), capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=3600, check=False,
+                              env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("F2 hết thời gian chờ sau 60 phút, không tự thử lại vô hạn.") from exc
+    except OSError as exc:
+        raise RuntimeError(f"Không chạy được F2 worker: {type(exc).__name__}") from exc
+    from .logging_support import redact
+    diagnostic = redact(((proc.stderr or "") + "\n" + (proc.stdout or ""))[-1600:]).strip()
+    if proc.returncode:
+        detail = diagnose_failure(diagnostic)
+        raise RuntimeError(f"F2 ({mode}) lỗi mã {proc.returncode}. {detail}. "
+                           f"Thông tin kỹ thuật: {diagnostic[:650] or 'không có'}")
+    after = snapshot()
+    # Do not report empty/partial files as successful downloads.
+    files = sorted(p for p in after if after[p][0] >= 1024 and
+                   (p not in previous or previous[p] != after[p]))
+    if not files:
+        raise RuntimeError(
+            f"F2 ({mode}) kết thúc nhưng không ghi video MP4 mới. "
+            "Có thể video đã tải trước, trang không có video công khai, "
+            "hoặc Douyin yêu cầu quyền truy cập. "
+            f"Chi tiết F2: {diagnostic[:650] or 'không có thông báo'}"
+        )
+    if progress:
+        progress(f"F2 ({mode}): đã xác minh {len(files)} video MP4 mới.")
+    return files
+
+
+def _download_channel_f2(url: str, folder: Path, max_items: int,
+                         progress: Callable[[str], None] | None) -> list[Path]:
+    """Retained compatibility entry point for channel downloads."""
+    return _download_f2(url, folder, max_items, progress, mode="post")
+
+
+def _download_video_f2(url: str, folder: Path,
+                       progress: Callable[[str], None] | None) -> list[Path]:
+    """The 3.2 defect: videos and v.douyin.com links were never sent to F2."""
+    return _download_f2(url, folder, 1, progress, mode="one")
 
 def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Store,
                         max_items: int = 30, progress: Callable[[str], None] | None = None,
                         *, mode: str = "auto") -> list[Path]:
-    """Download only with a recorded grant. Network access is performed by yt-dlp.
+    """Download only with a recorded grant; F2 is primary, yt-dlp is conditional fallback.
 
     Douyin frequently changes access controls. Report failures; no captcha or anti-bot bypass.
     """
@@ -135,9 +168,30 @@ def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Stor
             store.update_download(url, file)
         return result
 
+    # Primary route for Douyin videos (including v.douyin.com share links).
+    # yt-dlp is a fallback only when F2 is missing or reports unsupported input.
+    if f2_worker_executable() is not None:
+        try:
+            files = _download_video_f2(url, folder, progress)
+            for file in files:
+                store.update_download(url, file)
+            return files
+        except RuntimeError as exc:
+            error = str(exc).lower()
+            access_denied = any(x in error for x in ("403", "429", "captcha", "login",
+                                                      "đăng nhập", "xác minh", "forbidden"))
+            unsupported = any(x in error for x in ("unsupported", "not supported",
+                                                    "không hỗ trợ", "invalid url"))
+            if access_denied or not unsupported:
+                raise
+            if progress:
+                progress("F2 không hỗ trợ URL này; đang thử yt-dlp như một phương án dự phòng.")
+    elif progress:
+        progress("F2 chưa được cài kèm. Đang dùng yt-dlp dự phòng.")
+
     downloader = downloader_status()
     if not downloader.ready:
-        raise RuntimeError(downloader.diagnostic)
+        raise RuntimeError("F2 không khả dụng và " + downloader.diagnostic)
     outputs: list[Path] = []
 
     def hook(info: dict) -> None:
@@ -184,7 +238,16 @@ def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Stor
             with yt_dlp.YoutubeDL(options) as ydl:
                 ydl.download([url])
     except Exception as exc:
-        raise RuntimeError(diagnose_failure(exc)) from exc
+        from .logging_support import redact
+        detail = redact(str(exc))[-700:]
+        raise RuntimeError(f"yt-dlp: {diagnose_failure(detail)}. "
+                           f"Chi tiết: {detail}") from exc
+    if not outputs:
+        raise RuntimeError(
+            "yt-dlp kết thúc nhưng không tạo video mới. Nguồn có thể đã tải trước "
+            "(download archive), đã hết hạn hoặc bị Douyin từ chối. "
+            "Không đánh dấu tác vụ là tải thành công."
+        )
     for file in outputs:
         store.update_download(url, file)
     return outputs

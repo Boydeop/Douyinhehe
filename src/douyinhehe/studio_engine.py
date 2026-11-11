@@ -86,8 +86,15 @@ def extract_preview_frame(video: Path, image: Path, *, seconds: float = 1.0, fit
     image.parent.mkdir(parents=True, exist_ok=True)
     if fit == "crop":
         vf = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
-    else:
+    elif fit == "pad":
         vf = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+    else:
+        # Keep the mask editor's displayed coordinates consistent with the
+        # blurred-background output produced by build_edit_command().
+        vf = (f"split=2[bg][fg];[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
+              f"crop={width}:{height},boxblur=18:1[blur];"
+              f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease[front];"
+              "[blur][front]overlay=(W-w)/2:(H-h)/2")
     cmd = [find_binary("ffmpeg"), "-hide_banner", "-nostdin", "-y", "-ss", str(seconds),
            "-i", str(video), "-frames:v", "1", "-vf", vf, "-an", str(image)]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=45, check=False)

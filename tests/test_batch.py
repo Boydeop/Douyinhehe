@@ -95,3 +95,31 @@ def test_json_manifest_and_path_validation(tmp_path):
     manifest.write_text(json.dumps([row]), encoding="utf-8")
     with pytest.raises(ValueError, match="Dòng 1"):
         read_manifest(manifest)
+
+
+def test_recovered_batch_never_replaces_existing_video(tmp_path, monkeypatch):
+    import douyinhehe.batch as batch
+
+    manifest = make_manifest(tmp_path)
+    item = read_manifest(manifest)[0]
+    store = Store(tmp_path / "jobs.sqlite")
+    enqueue_manifest(store, manifest)
+    output_folder = tmp_path / "exports"
+    output_folder.mkdir()
+    original_output = output_folder / f"item_{batch.job_key(item)[:10]}.mp4"
+    original_output.write_bytes(b"original rendered output")
+
+    def fake_render(src, target, preset, progress=None):
+        assert not target.exists(), "Retry must not overwrite the prior output."
+        target.write_bytes(b"replacement render at new path")
+        return target
+
+    monkeypatch.setattr(batch, "render_video", fake_render)
+    monkeypatch.setattr(batch, "probe_video", lambda _: {"streams": [
+        {"codec_type": "video", "codec_name": "h264", "width": 1080, "height": 1920}]})
+    result = run_queue(store, output_folder)
+    assert result == {"done": 1, "failed": 0, "pending": 0}
+    assert original_output.read_bytes() == b"original rendered output"
+    new_video = output_folder / f"item_{batch.job_key(item)[:10]}_edited.mp4"
+    assert new_video.read_bytes() == b"replacement render at new path"
+    assert new_video.with_suffix(".provenance.json").is_file()

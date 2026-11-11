@@ -18,6 +18,7 @@ from typing import Callable
 from .core import LicenseGrant, Store, file_sha256, now_utc
 from .downloader import parse_douyin_urls
 from .media import EditPreset, probe_video, render_video
+from .editor_ops import safe_output_path
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm"}
 REQUIRED_COLUMNS = ("file", "original_url")
@@ -188,6 +189,11 @@ def run_queue(store: Store, outdir: Path, progress: Callable[[str], None] | None
             source_hash = _sha256(item.file)
             filename = re.sub(r"[^\w.-]", "_", item.file.stem, flags=re.UNICODE)[:64]
             dest = outdir / f"{filename}_{job['job_key'][:10]}.mp4"
+            # A previous attempt may have written MP4 before the DB state was
+            # committed. Never overwrite that orphan on retry: export a new
+            # uniquely named MP4 and keep both available for inspection.
+            if dest.exists():
+                dest = safe_output_path(outdir, dest)
             if progress:
                 progress(f"#{job['id']} Render {item.file.name}")
             render_video(item.file, dest, item.preset(), progress)

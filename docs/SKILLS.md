@@ -20,3 +20,32 @@ This page records what was reviewed and what the application actually executes. 
 3. Verify files and third-party licensing before redistribution; a successful build is not a complete license compliance review.
 
 **No REA runtime was embedded or installed by this repository.** `rea-agents` requires a compatible Node.js runtime and potentially optional analysis tools; do not force these onto ordinary app users.
+
+
+## November 2026 integration research
+
+- [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+  (MIT): reference for visual hierarchy, spacing, design tokens and accessible
+  focus states. Adapt patterns to existing Qt widgets, not React or Tailwind
+  code. Existing dark theme and QSplitter workspace stay lightweight.
+- [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill)
+  (MIT): probe → edit → verify workflow with local FFmpeg/FFprobe. This
+  repository calls FFmpeg directly, not an agent server.
+- [kajisho5/video-editing-skill](https://github.com/kajisho5/video-editing-skill)
+  (MIT): typed operations and verifiable export. Use its operation contract
+  as a roadmap for later cuts, concat and speed changes, not as already
+  delivered functionality.
+- [Johnserf-Seed/f2](https://github.com/Johnserf-Seed/f2)
+  (Apache-2.0): isolated Windows worker for permitted Douyin downloads.
+  No unauthorized access or browser-session harvesting.
+- [zhiyiYo/PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
+  (GPLv3/noncommercial or separate commercial license): **not bundled**.
+  Commercial affiliate intent makes wholesale adoption a licensing risk.
+  Adopt only general interface ideas, not its source code.
+- [JoeanAmier/TikTokDownloader](https://github.com/JoeanAmier/TikTokDownloader)
+  (GPL-3.0): useful comparative QA for batch downloads but **not vendored**
+  into this MIT project.
+
+Skills are development instructions, not packages to silently embed into
+the user's portable EXE. Record upstream licenses and verify each dependency
+before shipping.
