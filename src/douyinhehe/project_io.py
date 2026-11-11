@@ -145,3 +145,28 @@ def load_project(source: Path) -> tuple[list[tuple[Path, dict]], Path | None]:
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("File dự án bị hỏng hoặc không phải JSON hợp lệ.") from exc
     return _validate_payload(payload)
+
+
+def preset_from_state(state: dict, output_formats: tuple) -> "EditPreset":
+    """Construct the exact FFmpeg preset for one saved clip without Qt UI state."""
+    from dataclasses import replace
+    from .media import EditPreset
+
+    s = normalize_state(state, encode=False)
+    if len(output_formats) <= s["size"]:
+        raise ValueError("Định dạng đầu ra không được hỗ trợ.")
+    _, width, height = output_formats[s["size"]]
+    mask_mode = ("blur", "solid")[s["mask_type"]]
+    preset = EditPreset(
+        width=width, height=height,
+        fit=("crop", "pad", "blur")[s["fit"]],
+        brightness=s["brightness"], contrast=s["contrast"],
+        saturation=s["saturation"], cta=s["cta"].strip(),
+        original_url=s["source_url"].strip(),
+        subtitle=Path(s["subtitle"]).expanduser() if s["subtitle"].strip() else None,
+        narration=Path(s["voice"]).expanduser() if s["voice"].strip() else None,
+        masks=tuple(replace(region, mode=mask_mode) for region in s["masks"]),
+        trim_start=s["trim_start"], trim_end=s["trim_end"] or None,
+    )
+    preset.validate()
+    return preset
