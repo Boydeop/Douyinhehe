@@ -11,6 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlsplit, urlunsplit
 from .studio_engine import MaskRegion, parse_regions, mask_filter_chain
 
 
@@ -155,6 +156,27 @@ def _subtitle_filter(path: Path) -> str:
     return f"subtitles=filename='{escaped}'"
 
 
+def safe_source_metadata(url: str) -> str:
+    """Never embed account tokens, signatures or query strings in MP4 metadata."""
+    if not url:
+        return "local"
+    if url.startswith("local://"):
+        return "local"
+    try:
+        parts = urlsplit(url)
+        if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+            return "external video"
+        # Deliberately drop query, fragment and port. URLs often include cookies
+        # or ephemeral session parameters that must not survive in shared MP4s.
+        hostname = parts.hostname.lower().rstrip(".")
+        if hostname not in {"douyin.com", "iesdouyin.com"} and not (
+                hostname.endswith(".douyin.com") or hostname.endswith(".iesdouyin.com")):
+            return "external video"
+        return urlunsplit(("https", hostname, parts.path, "", ""))
+    except ValueError:
+        return "external video"
+
+
 def build_edit_command(source: Path, output: Path, overlay: Path, preset: EditPreset,
                        ffmpeg: str = "ffmpeg") -> list[str]:
     preset.validate()
@@ -191,7 +213,7 @@ def build_edit_command(source: Path, output: Path, overlay: Path, preset: EditPr
         cmd += ["-t", str(preset.trim_end - preset.trim_start)]
     cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p",
             "-r", "30", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-movflags", "+faststart",
-            "-shortest", "-metadata", f"comment=Source: {preset.original_url or 'local'}",
+            "-shortest", "-metadata", f"comment=Source: {safe_source_metadata(preset.original_url)}",
             str(output)]
     return cmd
 

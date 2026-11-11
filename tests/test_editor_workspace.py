@@ -109,3 +109,50 @@ def test_render_refuses_existing_target_even_when_created_during_processing(tmp_
     with pytest.raises(FileExistsError):
         render_video(original, output, EditPreset(width=360, height=640))
     assert output.read_bytes() == b"existing export must survive"
+
+
+def test_per_clip_state_produces_independent_ffmpeg_presets():
+    from douyinhehe.editor_ops import preset_from_editor_state
+
+    base = {
+        "output_size": (360, 640), "fit_mode": "crop", "mask_mode": "blur",
+        "brightness": 0, "contrast": 1, "saturation": 1,
+        "trim_start": 0, "trim_end": 0,
+        "masks": (), "cta": "", "source_url": "", "subtitle": "", "voice": "",
+    }
+    first = dict(base, brightness=.25, trim_start=2, trim_end=4,
+                 cta="Clip A", masks=(MaskRegion(.1, .7, .6, .1),))
+    second = dict(base, brightness=-.1, trim_start=0, trim_end=0, cta="Clip B",
+                  mask_mode="solid", masks=(MaskRegion(.2, .2, .2, .2),))
+    a = preset_from_editor_state(first)
+    b = preset_from_editor_state(second)
+    assert a.brightness == .25 and b.brightness == -.1
+    assert (a.trim_start, a.trim_end) == (2, 4)
+    assert (b.trim_start, b.trim_end) == (0, None)
+    assert a.cta == "Clip A" and b.cta == "Clip B"
+    assert a.masks[0].mode == "blur" and b.masks[0].mode == "solid"
+    assert first["masks"][0].mode == "blur"  # No mutation across clips.
+
+
+def test_invalid_state_fails_closed_instead_of_borrowing_another_clip():
+    from douyinhehe.editor_ops import preset_from_editor_state
+    with pytest.raises(ValueError, match="Thiếu cấu hình"):
+        preset_from_editor_state(None)
+    with pytest.raises(KeyError):
+        preset_from_editor_state({"brightness": 0})
+
+
+def test_source_metadata_never_embeds_share_tokens_or_accounts(tmp_path):
+    from douyinhehe.media import safe_source_metadata, build_edit_command
+    url = ("https://www.douyin.com/video/7263619345228582203?"
+           "msToken=SECRET_SESSION&share_token=SECRET_SHARE#fragment")
+    assert safe_source_metadata(url) == "https://www.douyin.com/video/7263619345228582203"
+    assert safe_source_metadata("local://camera") == "local"
+    assert safe_source_metadata("https://user:secret@douyin.com/video/123") == "external video"
+    command = build_edit_command(
+        tmp_path / "source.mp4", tmp_path / "out.mp4", tmp_path / "credit.png",
+        EditPreset(width=360, height=640, original_url=url),
+    )
+    joined = " ".join(command)
+    assert "SECRET_SESSION" not in joined and "SECRET_SHARE" not in joined
+    assert "7263619345228582203" in joined

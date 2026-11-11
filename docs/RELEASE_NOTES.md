@@ -1,3 +1,19 @@
+# Douyinhehe Studio 3.8 RC1 — production hardening
+
+Changes:
+- Fix batch export applying the active clip's trim/masks/colors/CTA to other clips.
+- Freeze and validate an independent FFmpeg preset for every source video.
+- Remove session query strings, share tokens and URL credentials from MP4 metadata.
+- Add deterministic regression tests for per-clip presets and private metadata.
+- Include hashed Windows component inventory and a production-readiness gate.
+
+Quality gate: Python checks on Windows/Ubuntu and frozen Windows EXE smoke.
+Live Douyin, interactive Windows playback, provider OAuth, code signing and actual
+Qt/FFmpeg commercial-redistribution licensing must be verified before a public
+stable release. This is a *release candidate*, not a completed production release.
+
+See docs/PRODUCTION_GATE_V3_8.md.
+
 # Douyinhehe v3.2.0 · Download UX and channel support
 
 - Detect profile URLs and route to separately bundled F2 worker instead of unsupported yt-dlp profile extractor.
