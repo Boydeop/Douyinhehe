@@ -39,3 +39,16 @@ def test_theme_text_contrast_at_least_wcag_aa(mode):
 def test_unknown_theme_is_rejected():
     with pytest.raises(ValueError, match="dark"):
         theme_stylesheet("invalid")
+
+
+def test_all_ui_action_callbacks_exist():
+    """Prevent Qt startup crashes when a removed editor callback survives in Settings."""
+    from pathlib import Path
+    import re
+
+    source = (Path(__file__).parents[1] / "src" / "douyinhehe" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    used = set(re.findall(r"self\.(on_[a-zA-Z_]\w*)", source))
+    defined = set(re.findall(r"\bdef\s+(on_[a-zA-Z_]\w*)\s*\(", source))
+    assert used <= defined, f"Unimplemented UI actions: {sorted(used - defined)}"
