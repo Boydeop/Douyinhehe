@@ -95,6 +95,41 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
+      - name: Build one-file Windows Setup EXE (NSIS)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install nsis.install --version=3.12.0 --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installer compiler installation failed' }
+          python scripts/generate_uninstall_manifest.py dist/DouyinhehePro scripts/generated_uninstall.nsh
+          if ($LASTEXITCODE -ne 0) { throw 'Uninstall manifest generation failed' }
+          $candidates = @(
+            'C:\Program Files (x86)\NSIS\makensis.exe',
+            'C:\Program Files\NSIS\makensis.exe'
+          )
+          $compiler = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) { throw 'NSIS makensis.exe unavailable' }
+          & $compiler /V2 scripts/windows_installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          if (-not (Test-Path DouyinhehePro-Setup-x64.exe)) { throw 'Setup EXE not created' }
+      - name: Clean Windows installer smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = Join-Path $env:RUNNER_TEMP 'DouyinheheFreshInstall'
+          $setup = (Resolve-Path 'DouyinhehePro-Setup-x64.exe').Path
+          $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Setup exited $($process.ExitCode)" }
+          $installed = Join-Path $installDir 'DouyinhehePro.exe'
+          if (-not (Test-Path $installed)) { throw 'Clean install missing EXE' }
+          & $installed --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Installed application dependency self-test failed' }
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & $installed --ui-smoke-test
+          if ($LASTEXITCODE -ne 0) { throw 'Installed application GUI smoke test failed' }
+          $uninstall = Join-Path $installDir 'Uninstall.exe'
+          $process = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Uninstaller exited $($process.ExitCode)" }
       - name: ZIP portable release folder (streamed)
         shell: pwsh
         run: |
@@ -116,13 +151,16 @@ jobs:
         shell: pwsh
         run: |
           $hash = (Get-FileHash -Algorithm SHA256 -Path DouyinhehePro-Windows-x64.zip).Hash.ToLowerInvariant()
-          "$hash  DouyinhehePro-Windows-x64.zip" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          $setupHash = (Get-FileHash -Algorithm SHA256 -Path DouyinhehePro-Setup-x64.exe).Hash.ToLowerInvariant()
+          @("$hash  DouyinhehePro-Windows-x64.zip", "$setupHash  DouyinhehePro-Setup-x64.exe") |
+            Out-File -FilePath SHA256SUMS.txt -Encoding ascii
           Get-Content SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: DouyinhehePro-Windows-x64
           path: |
             DouyinhehePro-Windows-x64.zip
+            DouyinhehePro-Setup-x64.exe
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -135,7 +173,7 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}" -replace '^release/', ''
           if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release tag: $tag" }
-          gh release create $tag DouyinhehePro-Windows-x64.zip SHA256SUMS.txt `
+          gh release create $tag DouyinhehePro-Windows-x64.zip DouyinhehePro-Setup-x64.exe SHA256SUMS.txt `
             --target "${{ github.sha }}" --title "Douyinhehe Pro $tag · Windows x64" `
             --notes-file docs/RELEASE_NOTES.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release upload failed' }
