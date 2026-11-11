@@ -148,7 +148,7 @@ jobs:
           '@
           $source | python -
           if ($LASTEXITCODE -ne 0) { throw 'Build manifest generation failed' }
-          Copy-Item docs/PRODUCTION_GATE_V3_8.md dist/DouyinhehePro/PRODUCTION_GATE.md
+          Copy-Item docs/PRODUCTION_READINESS_4_0.md dist/DouyinhehePro/PRODUCTION_READINESS.md
 
       - name: Build one-file Windows Setup EXE (NSIS)
         shell: pwsh
@@ -187,9 +187,15 @@ jobs:
             $smoke = Start-Process -FilePath $installed -ArgumentList $flag -PassThru -Wait
             if ($smoke.ExitCode -ne 0) { throw "Clean installed app $flag failed: exit $($smoke.ExitCode)" }
           }
+          # A user-created file in the installation directory must survive
+          # uninstall. Deletion may touch only package-owned manifest paths.
+          $userCanary = Join-Path $installDir 'my-video-notes.txt'
+          'KEEP THIS FILE' | Out-File -LiteralPath $userCanary -Encoding utf8
           $uninstall = Join-Path $installDir 'Uninstall.exe'
           $process = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw "Uninstaller exited $($process.ExitCode)" }
+          if (-not (Test-Path $userCanary)) { throw 'Installer deleted a user-created file!' }
+          if (Test-Path $installed) { throw 'Uninstall left the packaged app executable behind' }
       - name: ZIP portable release folder (streamed)
         shell: pwsh
         run: |
