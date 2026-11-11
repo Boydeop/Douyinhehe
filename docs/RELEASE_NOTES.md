@@ -1,3 +1,25 @@
+# Douyinhehe Studio 4.0 RC2: integrated installer and persistent projects
+
+- Local project save/open (.dhyproj) with bounded JSON, atomic writes and a
+  prior-version backup; no video binaries or API keys in the project file.
+- Added explicit "Mở dự án" and "Lưu dự án" buttons, Ctrl+O/Ctrl+S shortcuts,
+  and correct restoration of each clip's 3.8 runtime state.
+- Kept 3.8's protected batch export, redacted MP4 source URL metadata, offline
+  downloader diagnostics and SHA-256 component inventory.
+- Windows NSIS setup installer alongside portable ZIP, with an uninstall
+  manifest that must preserve user-created files and local app data.
+- Corrected previous PR #12 failure: NSIS uninstall manifest include path.
+- Tests cover project roundtrip/backup, state validation and installer safety.
+- No cookies or credential-harvesting added. Protected/private Douyin links
+  and CAPTCHA cannot be bypassed.
+
+**Gate:** Green Python Windows/Ubuntu and full Windows installer+portable
+CI are required before integration. Public stable production also requires
+authorized live Douyin UAT, clean Windows interactive tests, provider
+approval, code signing and FFmpeg/Qt redistribution compliance.
+
+See docs/PRODUCTION_READINESS_4_0.md.
+
 # Douyinhehe Studio 3.8 RC1 — production hardening
 
 Changes:
