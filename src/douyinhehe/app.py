@@ -135,7 +135,7 @@ class MainWindow(QMainWindow):
         self.nav.setAlternatingRowColors(False)
         self.nav.setAccessibleName("Các khu vực làm việc Douyinhehe")
         navbox.addWidget(self.nav, 1)
-        foot = QLabel("●  Chế độ cục bộ\\nVideo được xử lý trên máy của bạn")
+        foot = QLabel("●  Chế độ cục bộ\nVideo được xử lý trên máy của bạn")
         foot.setObjectName("sidebarFoot")
         foot.setWordWrap(True)
         navbox.addWidget(foot)
@@ -243,7 +243,8 @@ class MainWindow(QMainWindow):
         self.nav.currentRowChanged.connect(self._on_page_changed)
         self.nav.setCurrentRow(1)
         self._apply_theme()
-        QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
+        self.search_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        self.search_shortcut.activated.connect(self.focus_search)
         self.log("Khởi động thành công. Không có API trả phí nào được gọi tự động.")
 
     def _on_page_changed(self, index):
