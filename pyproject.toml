@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "douyinhehe"
-version = "3.4.0rc1"
+version = "3.5.0rc1"
 description = "Vietnamese desktop studio for licensed Douyin video affiliate workflows"
 readme = "README.md"
 requires-python = ">=3.11"
