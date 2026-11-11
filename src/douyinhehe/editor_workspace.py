@@ -58,7 +58,11 @@ class EditorWorkspace(QWidget):
         self._busy = False
         self._frame: Path | None = None
         self._last_export: Path | None = None
+        self._source_generation = 0
+        self._frame_generation = 0
+        self._clip_states: dict[Path, dict] = {}
         self._build()
+        self._default_edit_state = self._capture_edit_state()
         self.setAcceptDrops(True)
 
     def _build(self):
@@ -98,7 +102,13 @@ class EditorWorkspace(QWidget):
         left_box = QVBoxLayout(left)
         left_box.setContentsMargins(0, 0, 7, 0)
         left_box.setSpacing(7)
-        left_box.addWidget(QLabel("DANH SÁCH CLIP"))
+        library_row = QHBoxLayout()
+        library_row.addWidget(QLabel("THƯ VIỆN VIDEO"))
+        library_row.addStretch(1)
+        self.clip_count_label = QLabel("0 clip")
+        self.clip_count_label.setObjectName("hintText")
+        library_row.addWidget(self.clip_count_label)
+        left_box.addLayout(library_row)
         self.clip_list = QListWidget()
         self.clip_list.setObjectName("clipLibrary")
         self.clip_list.setMinimumWidth(180)
@@ -106,12 +116,12 @@ class EditorWorkspace(QWidget):
         self.clip_list.currentItemChanged.connect(self.select_clip)
         left_box.addWidget(self.clip_list)
         clip_actions = QHBoxLayout()
-        remove = QPushButton("Bỏ clip")
-        remove.clicked.connect(self.remove_clip)
-        clip_actions.addWidget(remove)
-        clear = QPushButton("Xóa danh sách")
-        clear.clicked.connect(self.clear_clips)
-        clip_actions.addWidget(clear)
+        self.remove_button = QPushButton("Bỏ clip")
+        self.remove_button.clicked.connect(self.remove_clip)
+        clip_actions.addWidget(self.remove_button)
+        self.clear_button = QPushButton("Xóa danh sách")
+        self.clear_button.clicked.connect(self.clear_clips)
+        clip_actions.addWidget(self.clear_button)
         left_box.addLayout(clip_actions)
 
         self.preview_stack = QStackedWidget()
@@ -344,18 +354,51 @@ class EditorWorkspace(QWidget):
             self.clip_list.setCurrentRow(0)
         self._refresh_enabled()
 
+    def _capture_edit_state(self) -> dict:
+        """Keep edits separately for each local clip until the app closes."""
+        return {
+            "size": self.size.currentIndex(),
+            "fit": self.fit.currentIndex(),
+            "brightness": self.brightness.value(),
+            "contrast": self.contrast.value(),
+            "saturation": self.saturation.value(),
+            "trim_start": self.trim_start.value(),
+            "trim_end": self.trim_end.value(),
+            "mask_type": self.mask_type.currentIndex(),
+            "masks": tuple(self.canvas.regions()),
+            "cta": self.cta.text(),
+            "source_url": self.source_url.text(),
+            "subtitle": self.subtitle.text(),
+            "voice": self.voice.text(),
+        }
+
+    def _restore_edit_state(self, saved: dict) -> None:
+        for name in ("size", "fit", "mask_type"):
+            getattr(self, name).setCurrentIndex(saved[name])
+        for name in ("brightness", "contrast", "saturation", "trim_start", "trim_end"):
+            getattr(self, name).setValue(saved[name])
+        for name in ("cta", "source_url", "subtitle", "voice"):
+            getattr(self, name).setText(saved[name])
+        self.canvas.set_regions(saved["masks"])
+
     def select_clip(self, item, _previous=None):
+        if self.source is not None and self.source in self.sources:
+            self._clip_states[self.source] = self._capture_edit_state()
+        self._source_generation += 1
+        self._frame_generation += 1
         if item is None:
             self.source = None
+            self._frame = None
             self._refresh_enabled()
             return
         source = Path(item.data(Qt.ItemDataRole.UserRole))
         self.source = source
+        generation = self._source_generation
         self._frame = None
         self.source_duration = 0.0
         self._duration_ms = 0
         self.seek.setValue(0)
-        self.canvas.clear_regions()
+        self._restore_edit_state(self._clip_states.get(source, self._default_edit_state))
         self.preview_stack.setCurrentIndex(0)
         if self.player is not None:
             self.player.stop()
@@ -364,7 +407,7 @@ class EditorWorkspace(QWidget):
         self._refresh_enabled()
 
         def ready(info):
-            if self.source != source:
+            if self.source != source or generation != self._source_generation:
                 return
             self.source_duration = clip_duration(info)
             self._duration_ms = int(self.source_duration * 1000)
@@ -386,11 +429,15 @@ class EditorWorkspace(QWidget):
         if self.player:
             self.player.stop()
         self.sources.remove(path)
+        self._clip_states.pop(path, None)
         self.clip_list.takeItem(index)
-        self.source = None
         if self.clip_list.count():
             self.clip_list.setCurrentRow(min(index, self.clip_list.count() - 1))
+            selected = self.clip_list.currentItem()
+            if selected is not None and self.source != Path(selected.data(Qt.ItemDataRole.UserRole)):
+                self.select_clip(selected)
         else:
+            self.select_clip(None)
             self.clip_details.setText("Chưa chọn video.")
         self._refresh_enabled()
 
@@ -398,7 +445,10 @@ class EditorWorkspace(QWidget):
         if self.player:
             self.player.stop()
         self.sources.clear()
+        self._clip_states.clear()
         self.source = None
+        self._source_generation += 1
+        self._frame_generation += 1
         self._frame = None
         self.clip_list.clear()
         self.canvas.clear_regions()
@@ -411,6 +461,9 @@ class EditorWorkspace(QWidget):
             button.setEnabled(available and not self._busy)
         self.export_all_button.setEnabled(bool(self.sources) and not self._busy)
         self.add_button.setEnabled(not self._busy)
+        self.remove_button.setEnabled(self.clip_list.currentRow() >= 0 and not self._busy)
+        self.clear_button.setEnabled(bool(self.sources) and not self._busy)
+        self.clip_count_label.setText(f"{len(self.sources)} clip")
 
     def _position_changed(self, position):
         if not self._dragging and self._duration_ms > 0:
@@ -520,6 +573,9 @@ class EditorWorkspace(QWidget):
             self.player.pause()
             self.play_button.setText("▶ Phát")
         path = self.source
+        self._frame_generation += 1
+        generation = self._frame_generation
+        source_generation = self._source_generation
         position = self.current_seconds()
         fit = self.fit.currentData()
         w, h = self.size.currentData()
@@ -532,7 +588,8 @@ class EditorWorkspace(QWidget):
         digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
         temp = user_data_dir() / "previews" / f"{digest}-{round(position * 10)}-{fit}.png"
         def ready(frame):
-            if self.source != path:
+            if (self.source != path or generation != self._frame_generation or
+                    source_generation != self._source_generation):
                 return
             self._frame = Path(frame)
             self.canvas.set_image(frame)
@@ -604,8 +661,11 @@ class EditorWorkspace(QWidget):
         except (ValueError, PermissionError, FileNotFoundError) as exc:
             return self._error(str(exc))
         self._busy_state(True, "Đang dựng bản xem trước 5 giây…")
+        source_generation = self._source_generation
         def done(result):
             self._busy_state(False, "Đã tạo video xem trước: " + str(result))
+            if self.source != source or source_generation != self._source_generation:
+                return  # Do not switch playback to an unrelated clip.
             self.preview_stack.setCurrentIndex(0)
             if self.player:
                 self.player.stop()

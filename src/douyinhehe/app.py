@@ -7,7 +7,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QDateTime, Qt, Signal, QUrl
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QDateTime, Qt, Signal, QUrl, QSettings
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateTimeEdit, QDoubleSpinBox, QFileDialog,
@@ -22,7 +22,8 @@ from .delivery import DESTINATIONS, delivery_preflight
 from .core import KEYWORDS, LicenseGrant, Store, opportunity_score, user_data_dir
 from .credentials import get_secret, save_secret
 from .downloader import (download_authorized, parse_douyin_urls, is_channel_url,
-                         classify_douyin_url, f2_worker_executable, selected_video_from_profile)
+                         classify_douyin_url, f2_worker_executable, selected_video_from_profile,
+                         offline_downloader_health)
 from .diagnostics import downloader_status, update_ytdlp
 from .subtitle_qc import audit_srt, preview_five_seconds
 from .glossary import load_glossary, save_glossary, validate_glossary
@@ -35,7 +36,7 @@ from .publisher import PostizClient
 from .subtitles import transcribe_to_srt, translate_srt, text_to_voice
 from .studio_ui import MaskCanvas
 from .studio_engine import MaskRegion, suggest_chinese_regions, extract_preview_frame
-from .theme import STYLESHEET
+from .ui_theme import theme_stylesheet
 from PySide6.QtWidgets import QListWidget, QStackedWidget, QSlider, QFrame
 from dataclasses import replace
 import hashlib
@@ -84,13 +85,17 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio 3.6 · Cookie-free First")
+        self.setWindowTitle("Douyinhehe Studio 3.7 RC1 · Creator Workspace")
         self.setMinimumSize(1080, 700)
         self.resize(1450, 900)
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
         self._workers = set()
         self._studio_frame = None
+        self.settings = QSettings("Douyinhehe", "Studio")
+        self.theme_mode = str(self.settings.value("appearance", "dark"))
+        if self.theme_mode not in ("light", "dark"):
+            self.theme_mode = "dark"
         root = QWidget()
         outer = QHBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -126,6 +131,17 @@ class MainWindow(QMainWindow):
         self.session_status = QLabel("●  Sẵn sàng")
         self.session_status.setObjectName("statusPill")
         headline.addWidget(self.session_status)
+        self.find_page = QLineEdit()
+        self.find_page.setPlaceholderText("Tìm chức năng · Ctrl+K")
+        self.find_page.setToolTip("Nhấn Enter để chuyển tới trang tìm được")
+        self.find_page.setMaximumWidth(218)
+        self.find_page.returnPressed.connect(self._navigate_from_search)
+        headline.addWidget(self.find_page)
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName("quietAction")
+        self.theme_button.setToolTip("Chuyển giao diện sáng / tối")
+        self.theme_button.clicked.connect(self.toggle_theme)
+        headline.addWidget(self.theme_button)
         log_toggle = QPushButton("Nhật ký")
         log_toggle.setToolTip("Hiện hoặc ẩn nhật ký kỹ thuật")
         headline.addWidget(log_toggle)
@@ -171,8 +187,47 @@ class MainWindow(QMainWindow):
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.nav.setCurrentRow(1)
         self._install_shortcuts()
-        self.setStyleSheet(STYLESHEET)
+        self._apply_theme()
+        saved = self.settings.value("window_geometry")
+        if saved:
+            self.restoreGeometry(saved)
         self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
+
+    def _apply_theme(self):
+        self.setStyleSheet(theme_stylesheet(self.theme_mode))
+        self.theme_button.setText("☀ Sáng" if self.theme_mode == "dark" else "◐ Tối")
+        self.theme_button.setAccessibleName("Đổi giao diện sáng/tối")
+
+    def toggle_theme(self):
+        self.theme_mode = "light" if self.theme_mode == "dark" else "dark"
+        self.settings.setValue("appearance", self.theme_mode)
+        self._apply_theme()
+
+    def _navigate_from_search(self):
+        query = self.find_page.text().strip().casefold()
+        if not query:
+            return
+        aliases = {
+            0: ("khám phá", "từ khóa", "ngách", "nghiên cứu"),
+            1: ("douyin", "tải", "link", "download", "cookie"),
+            2: ("studio", "biên tập", "chỉnh sửa", "editor", "cắt", "video"),
+            3: ("phụ đề", "dịch", "srt", "subtitle", "gemini"),
+            4: ("affiliate", "hoa hồng", "sản phẩm"),
+            5: ("lên lịch", "đăng bài", "postiz", "publish"),
+            6: ("cài đặt", "api", "khóa", "settings"),
+            7: ("batch", "hàng đợi", "hàng loạt"),
+            8: ("kiểm tra", "qc", "chất lượng"),
+        }
+        for index, terms in aliases.items():
+            if any(query in term or term in query for term in terms):
+                self.nav.setCurrentRow(index)
+                self.session_status.setText("●  " + self.nav.item(index).text())
+                return
+        self.session_status.setText("●  Không tìm thấy trang")
+
+    def closeEvent(self, event):
+        self.settings.setValue("window_geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def _install_shortcuts(self):
         """Keyboard-first access to the primary working surfaces."""
@@ -182,6 +237,12 @@ class MainWindow(QMainWindow):
             shortcut.activated.connect(lambda index=page: self.nav.setCurrentRow(index))
         focus = QShortcut(QKeySequence("Ctrl+L"), self)
         focus.activated.connect(self._focus_download_input)
+        search = QShortcut(QKeySequence("Ctrl+K"), self)
+        search.activated.connect(self._focus_page_search)
+
+    def _focus_page_search(self):
+        self.find_page.setFocus()
+        self.find_page.selectAll()
 
     def _focus_download_input(self):
         self.nav.setCurrentRow(1)
@@ -305,6 +366,15 @@ class MainWindow(QMainWindow):
         self.download_urls.setMinimumHeight(145)
         src.addWidget(QLabel("Liên kết video hoặc kênh"))
         src.addWidget(self.download_urls)
+        quick_links = QHBoxLayout()
+        paste_link = QPushButton("Dán từ clipboard")
+        paste_link.clicked.connect(self._paste_download_links)
+        quick_links.addWidget(paste_link)
+        clear_links = QPushButton("Xóa liên kết")
+        clear_links.clicked.connect(self.download_urls.clear)
+        quick_links.addWidget(clear_links)
+        quick_links.addStretch(1)
+        src.addLayout(quick_links)
         self.down_selected_btn = QPushButton("Chỉ lấy video đang mở từ link kênh (?vid)")
         self.down_selected_btn.setToolTip("Dùng video được chọn trong link hồ sơ, không tải cả kênh.")
         self.down_selected_btn.clicked.connect(self.on_download_selected_video)
@@ -345,6 +415,9 @@ class MainWindow(QMainWindow):
         browse = QPushButton("Chọn thư mục")
         browse.clicked.connect(lambda: self._folder(self.down_folder))
         form.addWidget(browse)
+        open_downloads = QPushButton("Mở thư mục tải")
+        open_downloads.clicked.connect(self.open_download_folder)
+        form.addWidget(open_downloads)
         form.addWidget(QLabel("Số video tối đa"))
         self.down_limit = QSpinBox()
         self.down_limit.setRange(0, 5000)
@@ -359,6 +432,10 @@ class MainWindow(QMainWindow):
         self.down_engine.setObjectName("hintText")
         self.down_engine.setWordWrap(True)
         form.addWidget(self.down_engine)
+        check_engine = QPushButton("Kiểm tra bộ tải · Không cần đăng nhập")
+        check_engine.setToolTip("Kiểm tra F2/yt-dlp trên máy, không gửi URL hay cookie lên Douyin")
+        check_engine.clicked.connect(self.on_check_download_engines)
+        form.addWidget(check_engine)
         form.addStretch(1)
         self.down_progress = QProgressBar()
         self.down_progress.setRange(0, 100)
@@ -431,6 +508,41 @@ class MainWindow(QMainWindow):
             self.down_selected_btn.setEnabled(False)
             self.down_detect.setText(str(exc))
             self.down_engine.setText("Hãy nhập liên kết Douyin HTTPS hợp lệ.")
+
+    def on_check_download_engines(self):
+        def report(result):
+            lines = []
+            for name, health in result.items():
+                label = "Sẵn sàng" if health["ready"] else "Cần sửa"
+                lines.append(f"{name}: {label}\n{health['detail']}")
+            QMessageBox.information(
+                self, "Kiểm tra bộ tải ngoại tuyến",
+                "\n\n".join(lines) + "\n\nLưu ý: kết quả này không xác nhận link Douyin tải được.",
+            )
+        self.job("Kiểm tra F2 và yt-dlp", lambda progress: offline_downloader_health(), report)
+
+    def _paste_download_links(self):
+        text = QApplication.clipboard().text().strip()
+        if not text:
+            self.session_status.setText("●  Clipboard trống")
+            return
+        # Clipboard data is user input; parser validates HTTPS and the Douyin host
+        # when the user starts a download. Never execute or open the pasted URL.
+        if self.download_urls.toPlainText().strip():
+            self.download_urls.insertPlainText("\n")
+        self.download_urls.insertPlainText(text)
+
+    def open_download_folder(self):
+        raw = self.down_folder.text().strip()
+        if not raw:
+            return self.alert("Chưa chọn thư mục tải video.")
+        folder = Path(raw).expanduser().resolve()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
+                raise OSError("Windows không mở được thư mục này.")
+        except (OSError, ValueError) as exc:
+            self.alert(exc)
 
     def on_download_selected_video(self):
         try:
@@ -866,6 +978,22 @@ class MainWindow(QMainWindow):
         if answer == QMessageBox.StandardButton.Yes:
             self.job("Cập nhật yt-dlp", lambda report: update_ytdlp(confirmed=True),
                      lambda status: self.log(status.diagnostic + " · " + status.version))
+
+    def on_ocr_check(self):
+        """Inspect locally bundled OCR assets without network or model downloads."""
+        from .ocr_support import check_ocr_assets
+
+        def done(status):
+            message = status.message + (
+                "\n\nĐây là kiểm tra file model. Bản Windows còn chạy "
+                "OCR suy luận thật trong --ocr-self-test."
+            )
+            if status.ready:
+                QMessageBox.information(self, "RapidOCR ngoại tuyến", message)
+            else:
+                QMessageBox.warning(self, "RapidOCR chưa sẵn sàng", message)
+
+        self.job("Kiểm tra RapidOCR", lambda progress: check_ocr_assets(), done)
 
     def on_export_logs(self):
         target, _ = QFileDialog.getSaveFileName(self, "Lưu nhật ký an toàn",

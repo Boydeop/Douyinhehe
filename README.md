@@ -1,6 +1,27 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.6.0 RC1 desktop UI refresh (F2 routing, video editor, offline OCR, Qt Multimedia)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.7.0 RC1 audited desktop experience (dual-theme Qt, per-clip edits, offline downloader diagnostics)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+
+## 3.7 audit upgrade (November 2026)
+
+The main GUI now has **persistent dark/light themes**, a **Ctrl+K feature
+search**, keyboard shortcuts, paste/clear URL buttons, one-click access to the
+download folder, and an **offline downloader health check**. This doctor runs
+F2's `--doctor` and examines the installed yt-dlp status without opening
+Douyin or reading cookies. A healthy engine is not a promise that every
+public Douyin link downloads successfully.
+
+The local Qt editor now maintains edit settings **per selected clip** during
+the current session and rejects stale metadata, frame or preview callbacks when
+the selection changes quickly. Removing a clip keeps a valid active selection.
+Log export also removes additional sensitive URL query parameters.
+
+No unverified yt-dlp fork, CAPTCHA bypass, GUI framework dependency or
+automatic API billing is added. The packaged app remains a Windows **onedir
+portable** executable with bundled dependencies, not a standalone single file.
+
+See [3.7 audit and acceptance gates](docs/AUDIT_V3_7_2026_11_11.md).
+Manual source-specific Douyin and Windows interaction tests are still required.
 
 ## Integrated 3.5 release candidate (November 2026)
 
