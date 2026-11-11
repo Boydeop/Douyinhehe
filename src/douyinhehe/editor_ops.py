@@ -5,6 +5,36 @@ from dataclasses import replace
 from pathlib import Path
 
 from .media import EditPreset
+from .studio_engine import MaskRegion, parse_regions
+
+
+def preset_from_editor_state(state: dict) -> EditPreset:
+    """Build a validated independent render preset from one clip's Qt snapshot.
+
+    This runs without Qt, so batch exports can freeze each clip's options
+    before the worker starts. A missing saved state must be handled by the
+    caller, never by accidentally borrowing another clip's values.
+    """
+    if not isinstance(state, dict):
+        raise ValueError("Thiếu cấu hình chỉnh sửa cho clip.")
+    size = state["output_size"]
+    if (not isinstance(size, (tuple, list)) or len(size) != 2 or
+            any(type(n) is not int for n in size)):
+        raise ValueError("Khung hình video không hợp lệ.")
+    masks = tuple(MaskRegion(region.x, region.y, region.width, region.height,
+                             state["mask_mode"]) for region in parse_regions(state["masks"]))
+    preset = EditPreset(
+        width=size[0], height=size[1], fit=state["fit_mode"],
+        brightness=float(state["brightness"]), contrast=float(state["contrast"]),
+        saturation=float(state["saturation"]), cta=str(state["cta"]).strip(),
+        original_url=str(state["source_url"]).strip(),
+        subtitle=Path(state["subtitle"]).expanduser() if state["subtitle"].strip() else None,
+        narration=Path(state["voice"]).expanduser() if state["voice"].strip() else None,
+        masks=masks, trim_start=float(state["trim_start"]),
+        trim_end=float(state["trim_end"]) if state["trim_end"] else None,
+    )
+    preset.validate()
+    return preset
 
 
 def clip_duration(info: dict) -> float:
