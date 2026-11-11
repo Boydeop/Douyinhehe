@@ -27,7 +27,8 @@ except ImportError:
     MULTIMEDIA_AVAILABLE = False
 
 from .core import user_data_dir
-from .editor_ops import clip_duration, safe_output_path, preview_preset, seconds_label
+from .editor_ops import (clip_duration, safe_output_path, preview_preset,
+                         preset_from_editor_state, seconds_label)
 from .logging_support import redact
 from .media import EditPreset, probe_video, render_video
 from .studio_engine import extract_preview_frame, suggest_chinese_regions
@@ -321,8 +322,8 @@ class EditorWorkspace(QWidget):
         self.rights = QCheckBox("Tôi có quyền biên tập và sử dụng những clip này")
         form.addWidget(self.rights)
         form.addWidget(QLabel("Bản xuất dùng H.264/AAC; file gốc luôn được giữ nguyên."))
-        note = QLabel("“Xuất tất cả” áp dụng một preset cho toàn bộ clip. Các điểm cắt và vùng che sẽ dùng chung; "
-                      "nên xem thử trước khi xuất hàng loạt.")
+        note = QLabel("“Xuất tất cả” giữ thông số cắt, màu, chữ và vùng che riêng từng clip. "
+                      "Hãy mở và xem thử từng clip trước khi xuất hàng loạt.")
         note.setObjectName("hintText")
         note.setWordWrap(True)
         form.addWidget(note)
@@ -358,13 +359,16 @@ class EditorWorkspace(QWidget):
         """Keep edits separately for each local clip until the app closes."""
         return {
             "size": self.size.currentIndex(),
+            "output_size": tuple(self.size.currentData()),
             "fit": self.fit.currentIndex(),
+            "fit_mode": self.fit.currentData(),
             "brightness": self.brightness.value(),
             "contrast": self.contrast.value(),
             "saturation": self.saturation.value(),
             "trim_start": self.trim_start.value(),
             "trim_end": self.trim_end.value(),
             "mask_type": self.mask_type.currentIndex(),
+            "mask_mode": self.mask_type.currentData(),
             "masks": tuple(self.canvas.regions()),
             "cta": self.cta.text(),
             "source_url": self.source_url.text(),
@@ -545,21 +549,7 @@ class EditorWorkspace(QWidget):
         self.trim_end.setValue(0)
 
     def _preset(self) -> EditPreset:
-        w, h = self.size.currentData()
-        end = self.trim_end.value() or None
-        regions = tuple(replace(r, mode=self.mask_type.currentData())
-                        for r in self.canvas.regions())
-        preset = EditPreset(
-            width=w, height=h, fit=self.fit.currentData(),
-            brightness=self.brightness.value(), contrast=self.contrast.value(),
-            saturation=self.saturation.value(), cta=self.cta.text().strip(),
-            original_url=self.source_url.text().strip(),
-            subtitle=Path(self.subtitle.text()).expanduser() if self.subtitle.text().strip() else None,
-            narration=Path(self.voice.text()).expanduser() if self.voice.text().strip() else None,
-            masks=regions, trim_start=self.trim_start.value(), trim_end=end,
-        )
-        preset.validate()
-        return preset
+        return preset_from_editor_state(self._capture_edit_state())
 
     def _authorized_preset(self) -> EditPreset:
         if not self.rights.isChecked():
@@ -686,37 +676,48 @@ class EditorWorkspace(QWidget):
         if not files:
             return self._error("Hãy chọn file video trước khi xuất.")
         try:
-            preset = self._authorized_preset()
-            if not self._check_subtitles(preset):
-                return
+            # The UI owns a single inspector. Freeze its current state and
+            # combine it with *each clip's own* previously saved state.
+            # Do not apply the selected clip's mask or trim to other sources.
+            if not self.rights.isChecked():
+                raise PermissionError("Hãy xác nhận quyền biên tập và sử dụng tất cả video.")
             if not self.output_folder.text().strip():
                 raise ValueError("Chưa chọn thư mục xuất.")
             folder = Path(self.output_folder.text()).expanduser().resolve()
-            if not str(folder):
-                raise ValueError("Chưa chọn thư mục xuất.")
+            current_state = self._capture_edit_state()
+            states = dict(self._clip_states)
+            if self.source is not None:
+                states[self.source] = current_state
+            allocated: set[Path] = set()
+            jobs: list[tuple[Path, Path, EditPreset]] = []
+            for source in files:
+                state = states.get(source, self._default_edit_state)
+                preset = preset_from_editor_state(state)
+                if not self._check_subtitles(preset):
+                    return
+                jobs.append((source, safe_output_path(folder, source, allocated), preset))
             if batch and len(files) > 1:
                 answer = QMessageBox.question(
-                    self, "Xuất hàng loạt", f"Áp dụng cùng một preset cho {len(files)} video?\n"
-                    "Vùng che và điểm cắt sẽ dùng chung.",
+                    self, "Xuất hàng loạt", f"Xuất {len(files)} clip với thiết lập riêng của từng clip?\\n"
+                    "File gốc sẽ không bị ghi đè.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if answer != QMessageBox.StandardButton.Yes:
                     return
-            allocated = set()
-            jobs = [(file, safe_output_path(folder, file, allocated)) for file in files]
-        except (ValueError, PermissionError, OSError, FileNotFoundError) as exc:
+        except (ValueError, KeyError, TypeError, PermissionError, OSError, FileNotFoundError) as exc:
             return self._error(str(exc))
         self._busy_state(True, f"Đang render {len(jobs)} clip…")
+
         def task(progress):
             outputs, failures = [], []
-            for i, (source, target) in enumerate(jobs, 1):
+            for i, (source, target, preset) in enumerate(jobs, 1):
                 progress(f"[{i}/{len(jobs)}] Render video: {source.name}")
                 try:
                     outputs.append(render_video(source, target, preset, progress))
                 except Exception as exc:
                     failures.append(f"{source.name}: {redact(str(exc))[:350]}")
             if not outputs:
-                raise RuntimeError("Không xuất được MP4 nào.\n" + "\n".join(failures[:4]))
+                raise RuntimeError("Không xuất được MP4 nào.\\n" + "\\n".join(failures[:4]))
             return outputs, failures
 
         def done(result):
@@ -729,11 +730,11 @@ class EditorWorkspace(QWidget):
                 (f" · {len(failures)} clip lỗi" if failures else ""),
             )
             if failures:
-                QMessageBox.warning(self, "Một số clip lỗi", "\n".join(failures[:8]))
+                QMessageBox.warning(self, "Một số clip lỗi", "\\n".join(failures[:8]))
             else:
                 QMessageBox.information(
                     self, "Đã xuất video thật",
-                    f"Đã xuất {len(outputs)} MP4 và kiểm tra bằng FFprobe.\n"
+                    f"Đã xuất {len(outputs)} MP4 và kiểm tra bằng FFprobe.\\n"
                     f"File đầu tiên: {outputs[0]}",
                 )
         self.owner.job(
