@@ -80,19 +80,17 @@ jobs:
           # Three ONNX model assets must be physically present inside the portable folder.
           $models = @(Get-ChildItem -Path dist/DouyinhehePro -Recurse -Filter '*.onnx' -File)
           if ($models.Count -lt 3) { throw "Bundled OCR model assets missing (found $($models.Count))" }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --ocr-self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Frozen OCR inference failed: never publish a broken offline OCR build' }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --render-self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Frozen FFmpeg masked render failed' }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
           & ./dist/DouyinhehePro/bin/DouyinF2Worker.exe --doctor
           if ($LASTEXITCODE -ne 0) { throw 'Portable F2 worker unavailable' }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged downloader diagnostics failed' }
+          # Windowed PyInstaller executables are not guaranteed to synchronously
+          # update $LASTEXITCODE when invoked with &. Wait and inspect ExitCode.
+          $appExe = (Resolve-Path 'dist/DouyinhehePro/DouyinhehePro.exe').Path
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --ui-smoke-test
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
+          foreach ($flag in @('--ocr-self-test', '--render-self-test',
+                               '--self-test', '--doctor', '--ui-smoke-test')) {
+            $proc = Start-Process -FilePath $appExe -ArgumentList $flag -PassThru -Wait
+            if ($proc.ExitCode -ne 0) { throw "Frozen app $flag failed: exit $($proc.ExitCode)" }
+          }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
       - name: Build one-file Windows Setup EXE (NSIS)
@@ -122,11 +120,11 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Setup exited $($process.ExitCode)" }
           $installed = Join-Path $installDir 'DouyinhehePro.exe'
           if (-not (Test-Path $installed)) { throw 'Clean install missing EXE' }
-          & $installed --self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Installed application dependency self-test failed' }
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & $installed --ui-smoke-test
-          if ($LASTEXITCODE -ne 0) { throw 'Installed application GUI smoke test failed' }
+          foreach ($flag in @('--self-test', '--ui-smoke-test', '--render-self-test')) {
+            $smoke = Start-Process -FilePath $installed -ArgumentList $flag -PassThru -Wait
+            if ($smoke.ExitCode -ne 0) { throw "Clean installed app $flag failed: exit $($smoke.ExitCode)" }
+          }
           $uninstall = Join-Path $installDir 'Uninstall.exe'
           $process = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw "Uninstaller exited $($process.ExitCode)" }
