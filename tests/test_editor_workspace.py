@@ -140,3 +140,19 @@ def test_invalid_state_fails_closed_instead_of_borrowing_another_clip():
         preset_from_editor_state(None)
     with pytest.raises(KeyError):
         preset_from_editor_state({"brightness": 0})
+
+
+def test_source_metadata_never_embeds_share_tokens_or_accounts(tmp_path):
+    from douyinhehe.media import safe_source_metadata, build_edit_command
+    url = ("https://www.douyin.com/video/7263619345228582203?"
+           "msToken=SECRET_SESSION&share_token=SECRET_SHARE#fragment")
+    assert safe_source_metadata(url) == "https://www.douyin.com/video/7263619345228582203"
+    assert safe_source_metadata("local://camera") == "local"
+    assert safe_source_metadata("https://user:secret@douyin.com/video/123") == "external video"
+    command = build_edit_command(
+        tmp_path / "source.mp4", tmp_path / "out.mp4", tmp_path / "credit.png",
+        EditPreset(width=360, height=640, original_url=url),
+    )
+    joined = " ".join(command)
+    assert "SECRET_SESSION" not in joined and "SECRET_SHARE" not in joined
+    assert "7263619345228582203" in joined
