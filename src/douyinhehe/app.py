@@ -979,6 +979,22 @@ class MainWindow(QMainWindow):
             self.job("Cập nhật yt-dlp", lambda report: update_ytdlp(confirmed=True),
                      lambda status: self.log(status.diagnostic + " · " + status.version))
 
+    def on_ocr_check(self):
+        """Inspect locally bundled OCR assets without network or model downloads."""
+        from .ocr_support import check_ocr_assets
+
+        def done(status):
+            message = status.message + (
+                "\n\nĐây là kiểm tra file model. Bản Windows còn chạy "
+                "OCR suy luận thật trong --ocr-self-test."
+            )
+            if status.ready:
+                QMessageBox.information(self, "RapidOCR ngoại tuyến", message)
+            else:
+                QMessageBox.warning(self, "RapidOCR chưa sẵn sàng", message)
+
+        self.job("Kiểm tra RapidOCR", lambda progress: check_ocr_assets(), done)
+
     def on_export_logs(self):
         target, _ = QFileDialog.getSaveFileName(self, "Lưu nhật ký an toàn",
                             str(user_data_dir() / "Douyinhehe-diagnostics.jsonl"), "JSON Lines (*.jsonl)")
