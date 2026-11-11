@@ -28,6 +28,7 @@ except ImportError:
 
 from .core import user_data_dir
 from .editor_ops import clip_duration, safe_output_path, preview_preset, seconds_label
+from .project_io import save_project, load_project, preset_from_state, EXTENSION
 from .logging_support import redact
 from .media import EditPreset, probe_video, render_video
 from .studio_engine import extract_preview_frame, suggest_chinese_regions
@@ -94,6 +95,18 @@ class EditorWorkspace(QWidget):
         hint.setObjectName("hintText")
         hint.setWordWrap(True)
         main.addWidget(hint)
+
+        project_actions = QHBoxLayout()
+        self.open_project_button = QPushButton("Mở dự án (.dhyproj)")
+        self.open_project_button.setToolTip("Mở lại clip và thiết lập chỉnh sửa riêng của mỗi clip")
+        self.open_project_button.clicked.connect(self.open_project_file)
+        project_actions.addWidget(self.open_project_button)
+        self.save_project_button = QPushButton("Lưu dự án")
+        self.save_project_button.setToolTip("Lưu dự án an toàn; tự tạo bản sao .bak khi lưu đè")
+        self.save_project_button.clicked.connect(self.save_project_file)
+        project_actions.addWidget(self.save_project_button)
+        project_actions.addStretch()
+        main.addLayout(project_actions)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
@@ -333,6 +346,64 @@ class EditorWorkspace(QWidget):
         form.addStretch(1)
         self.inspector.addTab(tab, "Xuất MP4")
 
+    def save_project_file(self):
+        if not self.sources:
+            return self._error("Chưa có clip nào để lưu dự án.")
+        if self._busy:
+            return self._error("Hãy hoàn thành render trước khi lưu dự án.")
+        destination, _ = QFileDialog.getSaveFileName(
+            self, "Lưu dự án Douyinhehe", str(user_data_dir() / "projects" / "MyStudio.dhyproj"),
+            "Douyinhehe Project (*.dhyproj)",
+        )
+        if not destination:
+            return
+        try:
+            if self.source is not None:
+                self._clip_states[self.source] = self._capture_edit_state()
+            projects = [(path, self._clip_states.get(path, self._default_edit_state))
+                        for path in self.sources]
+            saved = save_project(Path(destination), projects, self.source)
+        except (OSError, ValueError) as exc:
+            return self._error(str(exc))
+        self.status_label.setText("Đã lưu dự án: " + str(saved))
+
+    def open_project_file(self):
+        if self._busy:
+            return self._error("Hãy hoàn thành render trước khi mở dự án khác.")
+        selected_file, _ = QFileDialog.getOpenFileName(
+            self, "Mở dự án Douyinhehe", str(user_data_dir() / "projects"),
+            "Douyinhehe Project (*.dhyproj)",
+        )
+        if not selected_file:
+            return
+        try:
+            entries, selected = load_project(Path(selected_file))
+            missing = [path.name for path, _ in entries if not path.is_file()]
+            available = [(path, state) for path, state in entries if path.is_file()]
+            if not available:
+                raise ValueError("Các video nguồn của dự án không còn tồn tại ở đường dẫn đã lưu.")
+        except (OSError, ValueError) as exc:
+            return self._error(str(exc))
+        self.clear_clips()
+        self._clip_states = {path: state for path, state in available}
+        self.import_files([path for path, _ in available])
+        if selected is not None:
+            for i in range(self.clip_list.count()):
+                item = self.clip_list.item(i)
+                if Path(item.data(Qt.ItemDataRole.UserRole)) == selected:
+                    self.clip_list.setCurrentRow(i)
+                    break
+        self.status_label.setText(
+            f"Đã mở {len(available)} clip từ dự án." +
+            (f" {len(missing)} file không còn tồn tại." if missing else "")
+        )
+        if missing:
+            QMessageBox.warning(
+                self, "Thiếu video nguồn",
+                "Dự án không chứa dữ liệu video; hãy phục hồi các file nguồn:\n" +
+                "\n".join(missing[:10]),
+            )
+
     def choose_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Chọn video để biên tập", "", "Video (*.mp4 *.mov *.mkv *.webm *.m4v)"
@@ -460,6 +531,8 @@ class EditorWorkspace(QWidget):
         for button in (self.play_button, self.preview_button, self.export_one_button):
             button.setEnabled(available and not self._busy)
         self.export_all_button.setEnabled(bool(self.sources) and not self._busy)
+        self.save_project_button.setEnabled(bool(self.sources) and not self._busy)
+        self.open_project_button.setEnabled(not self._busy)
         self.add_button.setEnabled(not self._busy)
         self.remove_button.setEnabled(self.clip_list.currentRow() >= 0 and not self._busy)
         self.clear_button.setEnabled(bool(self.sources) and not self._busy)
@@ -686,30 +759,36 @@ class EditorWorkspace(QWidget):
         if not files:
             return self._error("Hãy chọn file video trước khi xuất.")
         try:
-            preset = self._authorized_preset()
-            if not self._check_subtitles(preset):
-                return
+            if not self.rights.isChecked():
+                raise PermissionError("Hãy xác nhận quyền chỉnh sửa các video trước khi xuất.")
             if not self.output_folder.text().strip():
                 raise ValueError("Chưa chọn thư mục xuất.")
             folder = Path(self.output_folder.text()).expanduser().resolve()
-            if not str(folder):
-                raise ValueError("Chưa chọn thư mục xuất.")
+            if self.source is not None:
+                self._clip_states[self.source] = self._capture_edit_state()
+            allocated = set()
+            jobs = []
+            for file in files:
+                state = self._clip_states.get(file, self._default_edit_state)
+                preset = preset_from_state(state, OUTPUT_FORMATS)
+                if not self._check_subtitles(preset):
+                    return
+                jobs.append((file, safe_output_path(folder, file, allocated), preset))
             if batch and len(files) > 1:
                 answer = QMessageBox.question(
-                    self, "Xuất hàng loạt", f"Áp dụng cùng một preset cho {len(files)} video?\n"
-                    "Vùng che và điểm cắt sẽ dùng chung.",
+                    self, "Xuất hàng loạt",
+                    f"Xuất {len(files)} video với điểm cắt, màu sắc và vùng che riêng từng clip?\n"
+                    "Hãy đảm bảo đã kiểm tra từng clip trước khi xuất.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if answer != QMessageBox.StandardButton.Yes:
                     return
-            allocated = set()
-            jobs = [(file, safe_output_path(folder, file, allocated)) for file in files]
         except (ValueError, PermissionError, OSError, FileNotFoundError) as exc:
             return self._error(str(exc))
         self._busy_state(True, f"Đang render {len(jobs)} clip…")
         def task(progress):
             outputs, failures = [], []
-            for i, (source, target) in enumerate(jobs, 1):
+            for i, (source, target, preset) in enumerate(jobs, 1):
                 progress(f"[{i}/{len(jobs)}] Render video: {source.name}")
                 try:
                     outputs.append(render_video(source, target, preset, progress))
