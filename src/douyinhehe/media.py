@@ -112,32 +112,37 @@ def make_overlay(preset: EditPreset, target: Path) -> None:
     image = Image.new("RGBA", (preset.width, preset.height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     pad = int(preset.width * 0.05)
-    headline = (preset.cta or "Xem chi tiết sản phẩm tại liên kết trên trang").strip()
-    max_chars = max(20, preset.width // 28)
-    lines = []
-    words = headline.split()
-    current = ""
-    for word in words:
-        if current and len(current + " " + word) > max_chars:
+    headline = preset.cta.strip()
+    if headline:
+        max_chars = max(20, preset.width // 28)
+        lines = []
+        words = headline.split()
+        current = ""
+        for word in words:
+            if current and len(current + " " + word) > max_chars:
+                lines.append(current)
+                current = word
+            else:
+                current = (current + " " + word).strip()
+        if current:
             lines.append(current)
-            current = word
-        else:
-            current = (current + " " + word).strip()
-    if current:
-        lines.append(current)
-    lines = lines[:3]
-    top = int(preset.height * (.40 if preset.cta_position == "center" else .74))
-    step = int(preset.cta_font_size * 1.75)
-    bottom = min(preset.height - pad, top + step * len(lines) + 95)
-    rgb_bg = tuple(bytes.fromhex(preset.cta_background[1:]))
-    rgb_fg = tuple(bytes.fromhex(preset.cta_foreground[1:]))
-    draw.rounded_rectangle((pad, top, preset.width - pad, bottom), radius=24, fill=(*rgb_bg, 180))
-    for index, line in enumerate(lines):
-        draw.text((pad + 20, top + 12 + index * step), line, fill=(*rgb_fg, 255),
-                  font=_font(preset.cta_font_size))
-    source = "Video tự quay" if preset.original_url.startswith("local://") else "Nguồn: Douyin"
-    draw.rounded_rectangle((pad, pad, preset.width - pad, pad + 64), radius=12, fill=(0, 0, 0, 160))
-    draw.text((pad + 12, pad + 9), source[:90], fill=(255, 255, 255, 255), font=_font(29))
+        lines = lines[:3]
+        top = int(preset.height * (.40 if preset.cta_position == "center" else .74))
+        step = int(preset.cta_font_size * 1.75)
+        bottom = min(preset.height - pad, top + step * len(lines) + 95)
+        rgb_bg = tuple(bytes.fromhex(preset.cta_background[1:]))
+        rgb_fg = tuple(bytes.fromhex(preset.cta_foreground[1:]))
+        draw.rounded_rectangle((pad, top, preset.width - pad, bottom), radius=24, fill=(*rgb_bg, 180))
+        for index, line in enumerate(lines):
+            draw.text((pad + 20, top + 12 + index * step), line, fill=(*rgb_fg, 255),
+                      font=_font(preset.cta_font_size))
+    # Never fabricate a Douyin credit on personal/local clips.
+    if preset.original_url:
+        source = ("Video tự quay" if preset.original_url.startswith("local://")
+                  else "Nguồn: Douyin" if "douyin.com" in preset.original_url else "Nguồn: Video")
+        draw.rounded_rectangle((pad, pad, preset.width - pad, pad + 64),
+                               radius=12, fill=(0, 0, 0, 160))
+        draw.text((pad + 12, pad + 9), source, fill=(255, 255, 255, 255), font=_font(29))
     target.parent.mkdir(parents=True, exist_ok=True)
     image.save(target)
 
