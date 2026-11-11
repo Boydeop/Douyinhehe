@@ -83,7 +83,7 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio · Video Affiliate Workspace")
+        self.setWindowTitle("Douyinhehe Studio 3.4 · Video Editor Preview")
         self.setMinimumSize(1080, 700)
         self.resize(1450, 900)
         self.store = Store()
@@ -112,10 +112,10 @@ class MainWindow(QMainWindow):
         workspace = QWidget()
         body = QVBoxLayout(workspace)
         body.setContentsMargins(20, 16, 20, 10)
-        heading = QLabel("Thư viện · Studio · Xuất bản")
+        heading = QLabel("Douyinhehe Workspace")
         heading.setObjectName("heading")
         body.addWidget(heading)
-        intro = QLabel("Douyinhehe 3.2  |  Tải hàng loạt  |  OCR tiếng Trung offline  |  FFmpeg")
+        intro = QLabel("Douyinhehe 3.4 preview  |  Video editor  |  OCR offline  |  FFmpeg")
         intro.setObjectName("subheading")
         body.addWidget(intro)
         self.pages = QStackedWidget()
@@ -197,6 +197,16 @@ class MainWindow(QMainWindow):
             QSlider::groove:horizontal { height: 7px; background: #4a515b; border-radius: 3px; }
             QSlider::handle:horizontal { background: #ff6774; width: 16px; margin: -5px 0; border-radius: 7px; }
             QToolTip { background: #272d38; color: white; border: 1px solid #6d7887; }
+            QTabWidget::pane { border: 1px solid #3b4351; border-radius: 8px; background: #1c222c; }
+            QTabBar::tab { background: #242b37; color: #d7deea; border-radius: 7px;
+                padding: 11px 14px; margin: 3px; }
+            QTabBar::tab:selected { background: #443039; color: white;
+                border-bottom: 2px solid #ff6474; }
+            QSplitter::handle { background: #3b4351; width: 6px; }
+            QListWidget { background: #1d232e; border: 1px solid #404958;
+                border-radius: 8px; padding: 4px; }
+            QListWidget::item { padding: 8px; border-radius: 5px; }
+            QListWidget::item:selected { background: #33495e; color: #ffffff; }
         """)
         self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
 
@@ -515,259 +525,10 @@ class MainWindow(QMainWindow):
         self.job("Tải Douyin", task, done, on_error=failed)
 
     def build_editor(self, layout):
-        studio = QWidget()
-        columns = QHBoxLayout(studio)
-        columns.setContentsMargins(0, 0, 0, 0)
-        preview_side = QWidget()
-        preview_col = QVBoxLayout(preview_side)
-        preview_col.addWidget(QLabel("KHUNG XEM TRƯỚC   ·   Kéo chuột để khoanh phụ đề"))
-        self.studio_canvas = MaskCanvas()
-        preview_col.addWidget(self.studio_canvas, 1)
-        self.edit_seek = QSlider(Qt.Orientation.Horizontal)
-        self.edit_seek.setRange(0, 240)
-        self.edit_seek.setValue(1)
-        preview_col.addWidget(self.edit_seek)
-        show_frame = QPushButton("▶ Xem khung tại vị trí thanh thời gian")
-        show_frame.clicked.connect(self.on_editor_preview)
-        preview_col.addWidget(show_frame)
-        auto = QPushButton("Nhận diện chữ Trung bằng OCR offline")
-        auto.clicked.connect(self.on_editor_auto)
-        preview_col.addWidget(auto)
-        check_ocr = QPushButton("Kiểm tra OCR và model đã đóng kèm")
-        check_ocr.clicked.connect(self.on_ocr_check)
-        preview_col.addWidget(check_ocr)
-        clear = QPushButton("Xóa vùng che · chuột phải hoàn tác")
-        clear.clicked.connect(self.studio_canvas.clear_regions)
-        preview_col.addWidget(clear)
-        columns.addWidget(preview_side, 2)
-
-        panel = group("Chỉnh sửa hàng loạt · FFmpeg")
-        self.edit_files = paragraph("Chọn video MP4/MOV hoặc dán đường dẫn, mỗi dòng một file", 95)
-        files_btn = QPushButton("Thêm nhiều video")
-        files_btn.clicked.connect(self.choose_edit_files)
-        self.edit_out = field("Thư mục xuất", str(user_data_dir() / "exports"))
-        out_btn = QPushButton("Chọn thư mục xuất")
-        out_btn.clicked.connect(lambda: self._folder(self.edit_out))
-        self.edit_url = field("URL Douyin gốc để ghi trong metadata (tùy chọn)")
-        self.edit_authorized = QCheckBox("Tôi có quyền sử dụng thương mại và chỉnh sửa các video")
-        self.edit_fit = QComboBox()
-        self.edit_fit.addItems(["crop", "pad", "blur"])
-        self.edit_mask_mode = QComboBox()
-        self.edit_mask_mode.addItem("Làm mờ vùng đã chọn", "blur")
-        self.edit_mask_mode.addItem("Che kín vùng đã chọn", "solid")
-        self.edit_auto_each = QCheckBox("Tự đề xuất vùng chữ cho từng video (cần kiểm tra kết quả)")
-        self.edit_trim_start = QDoubleSpinBox()
-        self.edit_trim_start.setRange(0, 36000)
-        self.edit_trim_start.setSuffix(" giây")
-        self.edit_trim_start.setSingleStep(.5)
-        self.edit_trim_end = QDoubleSpinBox()
-        self.edit_trim_end.setRange(0, 36000)
-        self.edit_trim_end.setSuffix(" giây")
-        self.edit_trim_end.setSingleStep(.5)
-        self.edit_trim_end.setSpecialValueText("Đến cuối")
-        self.edit_bright = QDoubleSpinBox()
-        self.edit_bright.setRange(-.5, .5)
-        self.edit_bright.setSingleStep(.05)
-        self.edit_contrast = QDoubleSpinBox()
-        self.edit_contrast.setRange(.5, 2)
-        self.edit_contrast.setSingleStep(.1)
-        self.edit_contrast.setValue(1)
-        self.edit_saturation = QDoubleSpinBox()
-        self.edit_saturation.setRange(0, 2)
-        self.edit_saturation.setSingleStep(.1)
-        self.edit_saturation.setValue(1)
-        self.edit_cta = field("Ví dụ: Link sản phẩm có ở trang cá nhân")
-        self.cta_name = field("Tên preset CTA", "Gia dụng")
-        self.cta_position = QComboBox()
-        self.cta_position.addItems(["bottom", "center"])
-        self.cta_background = field("Màu nền #RRGGBB", "#101827")
-        self.cta_foreground = field("Màu chữ #RRGGBB", "#FFFFFF")
-        self.cta_font_size = QSpinBox()
-        self.cta_font_size.setRange(18, 90)
-        self.cta_font_size.setValue(40)
-        save_cta = QPushButton("Lưu preset CTA")
-        save_cta.clicked.connect(self.on_save_cta)
-        load_cta = QPushButton("Nạp preset CTA")
-        load_cta.clicked.connect(self.on_load_cta)
-        self.edit_srt = field("Phụ đề .srt tiếng Việt (tùy chọn)")
-        srt_btn = QPushButton("Chọn SRT")
-        srt_btn.clicked.connect(lambda: self.chooser(self.edit_srt, filter="SRT (*.srt)"))
-        self.edit_narration = field("Audio lồng tiếng tùy chọn")
-        narration_btn = QPushButton("Chọn audio")
-        narration_btn.clicked.connect(lambda: self.chooser(self.edit_narration, filter="Audio (*.wav *.mp3)"))
-        for label, value in (("Video", self.edit_files), ("", files_btn), ("Thư mục xuất", self.edit_out),
-                             ("", out_btn), ("URL nguồn", self.edit_url), ("", self.edit_authorized),
-                             ("Khung 9:16", self.edit_fit), ("Che chữ", self.edit_mask_mode),
-                             ("", self.edit_auto_each), ("Cắt từ", self.edit_trim_start),
-                             ("Cắt đến", self.edit_trim_end), ("Độ sáng", self.edit_bright),
-                             ("Tương phản", self.edit_contrast), ("Bão hòa", self.edit_saturation),
-                             ("CTA", self.edit_cta), ("Preset CTA", self.cta_name),
-                             ("Vị trí CTA", self.cta_position), ("Màu nền", self.cta_background),
-                             ("Màu chữ", self.cta_foreground), ("Cỡ chữ", self.cta_font_size),
-                             ("", save_cta), ("", load_cta), ("Phụ đề", self.edit_srt),
-                             ("", srt_btn), ("Thuyết minh", self.edit_narration), ("", narration_btn)):
-            panel.layout().addRow(label, value)
-        check_sub = QPushButton("Kiểm tra phụ đề · tốc độ đọc")
-        check_sub.clicked.connect(self.on_check_srt)
-        preview_sub = QPushButton("Xem thử 5 giây có phụ đề")
-        preview_sub.clicked.connect(self.on_subtitle_preview)
-        go = QPushButton("RENDER HÀNG LOẠT 1080 × 1920 MP4")
-        go.clicked.connect(self.on_render)
-        for btn in (check_sub, preview_sub, go):
-            panel.layout().addRow(btn)
-        columns.addWidget(panel, 3)
-        layout.addWidget(studio)
-
-    def choose_edit_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Chọn nhiều video", "", "Video (*.mp4 *.mov)")
-        if files:
-            self.edit_files.setPlainText("\n".join(files))
-            self.on_editor_preview()
-
-    def _editor_preset(self):
-        if not self.edit_authorized.isChecked():
-            raise PermissionError("Bạn cần xác nhận quyền biên tập và sử dụng thương mại.")
-        masks = tuple(replace(r, mode=self.edit_mask_mode.currentData()) for r in self.studio_canvas.regions())
-        end = self.edit_trim_end.value() or None
-        preset = EditPreset(fit=self.edit_fit.currentText(), brightness=self.edit_bright.value(),
-                            contrast=self.edit_contrast.value(), saturation=self.edit_saturation.value(),
-                            creator="", original_url=self.edit_url.text().strip(), cta=self.edit_cta.text(),
-                            masks=masks, trim_start=self.edit_trim_start.value(), trim_end=end,
-                            cta_position=self.cta_position.currentText(),
-                            cta_background=self.cta_background.text(),
-                            cta_foreground=self.cta_foreground.text(), cta_font_size=self.cta_font_size.value(),
-                            subtitle=Path(self.edit_srt.text()) if self.edit_srt.text() else None,
-                            narration=Path(self.edit_narration.text()) if self.edit_narration.text() else None)
-        preset.validate()
-        return preset
-
-    def on_render(self):
-        try:
-            files = [Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip()]
-            if not files or not all(v.is_file() for v in files):
-                raise ValueError("Cần chọn file video có thật.")
-            preset = self._editor_preset()
-            if preset.subtitle:
-                issues = audit_srt(preset.subtitle)
-                if any(x.severity == "error" for x in issues):
-                    raise ValueError("Phụ đề có lỗi timecode, sửa trước khi render.")
-                if issues:
-                    confirm = QMessageBox.question(self, "Cảnh báo phụ đề",
-                        f"Có {len(issues)} cảnh báo phụ đề. Vẫn tiếp tục render?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                    if confirm != QMessageBox.StandardButton.Yes:
-                        return
-            output = Path(self.edit_out.text())
-            auto_each = self.edit_auto_each.isChecked()
-        except Exception as exc:
-            return self.alert(exc)
-        if auto_each:
-            confirm = QMessageBox.question(self, "Nhận diện OCR từng video",
-                "OCR offline sẽ phân tích một khung mẫu mỗi video và gợi ý vùng che, "
-                "không đảm bảo che hết phụ đề thay đổi theo thời gian. "
-                "Nếu không phát hiện chữ Trung, ứng dụng không che mù vùng khác. Tiếp tục?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if confirm != QMessageBox.StandardButton.Yes:
-                return
-        def task(report):
-            outputs = []
-            for index, video in enumerate(files, 1):
-                report(f"[{index}/{len(files)}] Render {video.name}")
-                active = preset
-                if auto_each:
-                    with tempfile.TemporaryDirectory(prefix="douyinhehe-mask-") as temp:
-                        frame = extract_preview_frame(video, Path(temp) / "preview.png",
-                                                      seconds=preset.trim_start + .5, fit=preset.fit)
-                        regions, reason = suggest_chinese_regions(frame)
-                        report(reason)
-                        if regions:
-                            # Preserve any manually drawn regions when automatic OCR is enabled.
-                            manual = tuple(preset.masks)
-                            active = replace(preset, masks=(manual + regions)[:12])
-                        else:
-                            report(f"{video.name}: OCR không phát hiện chữ Trung; giữ vùng che thủ công nếu có.")
-                dest = output / f"{video.stem}_douyinhehe.mp4"
-                if dest.resolve() == video.resolve():
-                    raise ValueError("Không ghi đè file nguồn.")
-                outputs.append(render_video(video, dest, active, report))
-            return outputs
-        self.job("Render hàng loạt", task, lambda result: self.log(f"Đã xuất {len(result)} video vào {output}"))
-
-    def on_editor_preview(self):
-        try:
-            video = next(Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip())
-            if not video.is_file():
-                raise FileNotFoundError(video)
-            second = self.edit_seek.value()
-            fit = self.edit_fit.currentText()
-            digest = hashlib.sha256(str(video).encode()).hexdigest()[:12]
-            target = user_data_dir() / "previews" / f"studio-{digest}-{second}.png"
-        except Exception as exc:
-            return self.alert(exc)
-        def done(frame):
-            try:
-                self.studio_canvas.set_image(str(frame))
-                self._studio_frame = Path(frame)
-            except Exception as exc:
-                self.alert(exc)
-        self.job("Xem khung video", lambda report: extract_preview_frame(video, target,
-                 seconds=float(second), fit=fit), done)
-
-    def on_ocr_check(self):
-        from .ocr_support import check_ocr_assets, offline_ocr_smoke_test
-        status = check_ocr_assets()
-        if not status.ready:
-            return self.alert(status.message)
-        self.job("Kiểm tra OCR offline", lambda report: offline_ocr_smoke_test(),
-                 lambda result: QMessageBox.information(self, "OCR offline",
-                    f"OCR hoạt động: {result['recognized_lines']} dòng đã nhận diện; "
-                    f"{result['models']} model ONNX đóng kèm."))
-
-    def on_editor_auto(self):
-        if not self._studio_frame:
-            return self.alert("Hãy nạp khung hình trước khi gợi ý che phụ đề.")
-        self.job("Gợi ý vùng chữ Trung", lambda report: suggest_chinese_regions(self._studio_frame),
-                 lambda result: (self.studio_canvas.set_regions(result[0]),
-                                 QMessageBox.information(self, "Gợi ý vùng phụ đề", result[1])))
-
-    def on_save_cta(self):
-        try:
-            style = CTAStyle(self.cta_position.currentText(), self.cta_background.text(),
-                             self.cta_foreground.text(), self.cta_font_size.value())
-            path = save_preset(self.cta_name.text().strip(), style)
-            self.log(f"Đã lưu CTA preset: {path}")
-        except Exception as exc:
-            self.alert(exc)
-
-    def on_load_cta(self):
-        try:
-            style = load_preset(self.cta_name.text().strip())
-            self.cta_position.setCurrentText(style.position)
-            self.cta_background.setText(style.background)
-            self.cta_foreground.setText(style.foreground)
-            self.cta_font_size.setValue(style.font_size)
-        except Exception as exc:
-            self.alert(exc)
-
-    def on_check_srt(self):
-        try:
-            path = Path(self.edit_srt.text())
-            issues = audit_srt(path)
-            message = ("Phụ đề đạt kiểm tra độ dài và tốc độ đọc." if not issues else
-                       "\n".join(f"Câu {x.item}: {x.detail}" for x in issues[:30]))
-            QMessageBox.information(self, "Kiểm tra phụ đề", message)
-        except Exception as exc:
-            self.alert(exc)
-
-    def on_subtitle_preview(self):
-        try:
-            video = next(Path(v.strip()) for v in self.edit_files.toPlainText().splitlines() if v.strip())
-            subtitle = Path(self.edit_srt.text())
-            target = user_data_dir() / "previews" / (video.stem + "-5s.mp4")
-        except (ValueError, StopIteration) as exc:
-            return self.alert(exc)
-        self.job("Xem trước 5 giây", lambda report: preview_five_seconds(video, subtitle, target),
-                 lambda file: QDesktopServices.openUrl(QUrl.fromLocalFile(str(file))))
+        """Embed the real playable editor rather than a long FFmpeg settings form."""
+        from .editor_workspace import EditorWorkspace
+        self.editor_workspace = EditorWorkspace(self)
+        layout.addWidget(self.editor_workspace, 1)
 
     def build_translation(self, layout):
         panel = group("Nhận dạng Trung → SRT · chạy offline với faster-whisper")
