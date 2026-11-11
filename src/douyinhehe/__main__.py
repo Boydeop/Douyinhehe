@@ -113,6 +113,21 @@ def main() -> None:
             raise RuntimeError("Studio must disable export until a clip is opened")
         if editor.inspector.count() != 4:
             raise RuntimeError("Missing media editor inspector sections")
+        if editor.save_project_button.isEnabled() or not editor.open_project_button.isEnabled():
+            raise RuntimeError("Project buttons must reflect an empty media library")
+        # Verify project serialization from the frozen app, with no cloud I/O,
+        # using the exact current UI state and a synthetic local path.
+        from .project_io import save_project, load_project
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        with TemporaryDirectory(prefix="douyinhehe-project-smoke-") as tmp:
+            source = Path(tmp) / "source.mp4"
+            source.write_bytes(b"synthetic source reference")
+            project = Path(tmp) / "qa.dhyproj"
+            save_project(project, [(source, editor._capture_edit_state())], source)
+            clips, selected = load_project(project)
+            if len(clips) != 1 or selected != source or clips[0][1]["size"] != 0:
+                raise RuntimeError("Project save/load roundtrip failed")
         if editor.clip_list.objectName() != "clipLibrary":
             raise RuntimeError("Editor library is missing the 3.6 design contract")
         if not window.down_open_studio or window.down_open_studio.isEnabled():
