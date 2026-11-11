@@ -40,7 +40,7 @@ Section "Uninstall"
   ; Only the application installation folder is removed. Database, saved
   ; projects, downloaded videos, account keys and caches in user_data_dir()
   ; are deliberately kept intact across upgrades and uninstall.
-  !include "scripts\\generated_uninstall.nsh"
-  Delete "$INSTDIR\\Uninstall.exe"
+  !include "scripts/generated_uninstall.nsh"
+  Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 SectionEnd
