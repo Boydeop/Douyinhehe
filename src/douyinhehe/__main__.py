@@ -113,6 +113,15 @@ def main() -> None:
             raise RuntimeError("Studio must disable export until a clip is opened")
         if editor.inspector.count() != 4:
             raise RuntimeError("Missing media editor inspector sections")
+        if editor.clip_list.objectName() != "clipLibrary":
+            raise RuntimeError("Editor library is missing the 3.6 design contract")
+        if not window.down_open_studio or window.down_open_studio.isEnabled():
+            raise RuntimeError("Open-in-Studio must wait for actual downloaded video")
+        if window.session_status.objectName() != "statusPill":
+            raise RuntimeError("Desktop status presentation missing")
+        window._focus_download_input()
+        if window.nav.currentRow() != 1 or not window.download_urls.hasFocus():
+            raise RuntimeError("Ctrl+L navigation target is not functional")
         window.close()
         return
     if args.doctor:
