@@ -79,3 +79,33 @@ def test_actual_video_file_is_trimmed_edited_and_exported(tmp_path):
     assert .6 < float(info["format"]["duration"]) < 1.8
     assert result.stat().st_size > 2000
     assert original.read_bytes() == before, "Editing must never alter the source."
+
+
+def test_existing_export_is_never_replaced_even_before_render(tmp_path, monkeypatch):
+    """The publishing step must not silently replace an existing export."""
+    import os
+    from douyinhehe import media
+
+    staged = tmp_path / "staged.mp4"
+    target = tmp_path / "already.mp4"
+    staged.write_bytes(b"new render")
+    target.write_bytes(b"keep me")
+    with pytest.raises(FileExistsError):
+        os.link(staged, target)
+    assert target.read_bytes() == b"keep me"
+
+
+@pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+                    reason="FFmpeg binary not installed in this CI image")
+def test_render_refuses_existing_target_even_when_created_during_processing(tmp_path):
+    original = tmp_path / "original.mp4"
+    output = tmp_path / "existing.mp4"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=320x240:d=.5",
+        "-c:v", "mpeg4", str(original),
+    ], check=True, capture_output=True, timeout=45)
+    output.write_bytes(b"existing export must survive")
+    with pytest.raises(FileExistsError):
+        render_video(original, output, EditPreset(width=360, height=640))
+    assert output.read_bytes() == b"existing export must survive"
