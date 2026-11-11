@@ -113,6 +113,22 @@ def main() -> None:
             raise RuntimeError("Studio must disable export until a clip is opened")
         if editor.inspector.count() != 4:
             raise RuntimeError("Missing media editor inspector sections")
+        # Exercise desktop shell behaviors, not only static widget creation.
+        if window.heading.text() != "Tải nguồn công khai":
+            raise RuntimeError("Incorrect initial workspace heading")
+        window.find_page.setText("phụ đề")
+        window.open_search_result()
+        if window.nav.currentRow() != 3 or window.pages.currentIndex() != 3:
+            raise RuntimeError("Quick navigation did not open the subtitles workspace")
+        original_theme = window.theme_mode
+        window.toggle_theme()
+        if window.theme_mode == original_theme:
+            raise RuntimeError("Theme toggle did not change the theme")
+        window.toggle_theme()
+        if window.theme_mode != original_theme:
+            raise RuntimeError("Theme toggle did not restore the original theme")
+        if editor.clear_button.isEnabled() or editor.clip_count_label.text() != "0 clip":
+            raise RuntimeError("Editor library empty state is inconsistent")
         window.close()
         return
     if args.doctor:
