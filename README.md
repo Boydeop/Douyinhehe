@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.5.0 RC1 integrated preview (F2 routing, video editor, offline OCR, Qt Multimedia)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.6.0 RC1 design refresh preview (public-link downloader, video editor, offline OCR)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Integrated 3.5 release candidate (November 2026)
 
@@ -18,6 +18,32 @@ and a manual Windows acceptance pass with authorized Douyin links and a
 representative licensed local MP4. Automated tests cannot guarantee live
 Douyin access or commercial distribution rights. See
 [the integration audit](docs/INTEGRATION_AUDIT_2026_11.md).
+
+## 3.6 RC1 desktop UX refresh
+
+The Windows studio is redesigned with a consistent dark/light native Qt design
+system, higher-contrast controls, compact workspace header, keyboard quick
+navigation (`Ctrl+K` then Enter), task icons, persistent theme preference,
+one-click local video import and collapsible diagnostics. It keeps nine existing
+functional pages and the real FFmpeg video editor, with clear empty-library
+states. The downloader adds explicit clipboard paste, clear and open-download-
+folder actions with honest **public/no manually supplied cookies** guidance.
+
+This does **not** guarantee Douyin downloads without authentication. Public
+videos may be accessible to F2 or yt-dlp on some networks; login-only,
+CAPTCHA, HTTP 403/429 and region-restricted resources must not be bypassed.
+The downloader never asks the user to export private browser cookies. Live
+network behavior must be tested on a permitted Douyin video.
+
+Design references: UI/UX Pro Max, Anthropic Frontend Design and Impeccable.
+Their guidance informed native PySide6 components; the project does not embed
+GPL-licensed QFluentWidgets or any web-only runtime. See
+[UX redesign and acceptance plan](docs/UX_REDESIGN_V3_6.md).
+
+**Status:** 3.6.0rc1 is an engineering preview pending integrated Windows
+CI, live allowed-link checks and local interactive Windows verification.
+Portable ZIP is still required because FFmpeg, F2, Qt plugins and OCR weights
+are packaged alongside the app.
 
 ## Implemented
 
