@@ -95,6 +95,46 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
+      - name: Capture native Qt UX screenshots (offscreen)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:DOUYINHEHE_HOME = Join-Path $env:RUNNER_TEMP 'DouyinheheUXCapture'
+          $script = @'
+          from pathlib import Path
+          from PySide6.QtWidgets import QApplication
+          from douyinhehe.app import MainWindow
+          output = Path("ux-preview")
+          output.mkdir(exist_ok=True)
+          app = QApplication([])
+          window = MainWindow()
+          window.resize(1480, 920)
+          window.show()
+          app.processEvents()
+          if not window.grab().save(str(output / "01-download-dark.png"), "PNG"):
+              raise RuntimeError("Cannot capture downloader UX")
+          window.nav.setCurrentRow(2)
+          app.processEvents()
+          if not window.grab().save(str(output / "02-editor-dark.png"), "PNG"):
+              raise RuntimeError("Cannot capture editor UX")
+          if window.theme_mode != "light":
+              window.toggle_theme()
+          window.nav.setCurrentRow(1)
+          app.processEvents()
+          if not window.grab().save(str(output / "03-download-light.png"), "PNG"):
+              raise RuntimeError("Cannot capture light UI")
+          window.close()
+          '@
+          $script | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Native desktop UX screenshot check failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DouyinheheStudio-UX-Previews
+          path: ux-preview/*.png
+          retention-days: 14
+          if-no-files-found: error
+
       - name: ZIP portable release folder (streamed)
         shell: pwsh
         run: |
