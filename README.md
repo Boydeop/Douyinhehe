@@ -1,6 +1,6 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.2.0 engineering preview (bundled offline OCR)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.4.0 RC1 editor preview (bundled offline OCR and Qt Multimedia)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
 
 ## Implemented
 
@@ -9,7 +9,7 @@ Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle trans
 | Niche research | Chinese keyword collections, manually weighted opportunity score, saved sources | No automated Douyin search API; metrics entered manually |
 | Douyin downloader | Multiple links and full profile mode, local archive to avoid duplicates | Entire-channel coverage depends on Douyin/yt-dlp; no access bypass |
 | Privacy-first rights confirmation | Confirmation without storing author names/contracts/expiry in new jobs | Old local records can be scrubbed with Settings action; permissions still required |
-| Batch video | 9:16 crop/pad/blur, color grading, CTA, optional SRT, optional voice replacement, MP4 H.264/AAC | Requires FFmpeg with libx264, drawtext and subtitles filter as applicable |
+| Video editor | Play MP4/MOV/MKV, scrub, set trim points, mask text, 9:16/16:9/square color presets, real 5-second render preview and verified MP4 export, single/batch | Media playback codec compatibility depends on Qt Multimedia/Windows; this is not a multi-track CapCut timeline |
 | Mandarin transcription | Optional `faster-whisper` offline | Model weights downloaded separately on first use; CPU may be slow |
 | Translation | Google Gemini SDK to translate SRT in batches, local cache, manual Free Tier opt-in | API key and actual Free Tier entitlement required; quota errors stop processing |
 | Vietnamese TTS | Offline Windows SAPI via pyttsx3 | Vietnamese SAPI voice must already be installed; not auto-bundled |
@@ -18,6 +18,20 @@ Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle trans
 | Desktop | PySide6 worker queue, SQLite, OS credential storage, nine feature tabs | Live platform authorizations still need user testing |
 | V2 batch pipeline | CSV/JSON manifests with per-video rights, recoverable render jobs, deduplication, provenance sidecars | Only local edits auto-retry; remote publishing stays manual-approval |
 | V2 delivery QA | Codec/aspect checks and per-platform CTA/source guidance | Guidelines, not platform approval |
+
+## Real video editor in v3.4 RC1
+
+The Studio page now includes local clip import, native Qt Multimedia video playback,
+seek/timeline, IN/OUT trim, crop/pad/background blur and color controls, a draggable
+mask canvas with optional Chinese OCR, CTA/SRT/narration, a **real rendered 5-second
+preview**, and single/batch H.264 MP4 export. FFmpeg and FFprobe validate video
+outputs, and source files are not overwritten. Empty CTA/source input no longer
+adds unexpected text overlays.
+
+This preview is distributed for testing; GitHub Actions checks that a synthetic
+video can be cut, rendered and played through the packaged component startup.
+Interactive testing on Windows with real camera footage and audio is still needed.
+Read [Studio v3.4 preview workflow](docs/VIDEO_EDITOR_WORKSPACE.md).
 
 ## Douyin downloader and UI in v3.2
 
