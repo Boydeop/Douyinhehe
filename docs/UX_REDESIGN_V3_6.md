@@ -68,3 +68,17 @@ engineering decisions and are not automatically installed into the EXE.
 - Bounded and resumable download queue with pause/cancel.
 - Intelligent moving-subtitle detection, with per-frame editing preview.
 - Optional commercially licensed Fluent widget pack only after license review.
+
+## Important Windows startup regression found by UX capture
+
+The first 3.6 UX capture failed because `build_settings()` still referenced
+`MainWindow.on_ocr_check`, a callback dropped during the earlier editor
+replacement. The prior frozen `--windowed` UI smoke appeared to pass despite
+a Python traceback. A successful Windows build does **not** establish a
+usable GUI when the exit status is unreliable.
+
+Fixes: restore an asynchronous offline OCR inference check handler, add a
+static regression test for all referenced `on_*` callbacks, require a
+success-marker file from the frozen `--ui-smoke-test`, and capture actual
+native Qt screens as a separate Windows Actions artifact. Do not merge before
+all of these gates pass.
