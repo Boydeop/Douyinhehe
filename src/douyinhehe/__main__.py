@@ -47,6 +47,18 @@ def packaged_render_smoke_test() -> int:
                             original_url="local://test", cta="",
                             masks=(MaskRegion(.1, .7, .8, .12, "blur"),))
         render_video(source, output, preset)
+        from .editor_ops import preview_preset
+        preview = folder / "preview.mp4"
+        short = preview_preset(EditPreset(width=720, height=1280, fit="pad",
+                                          original_url="", cta="", trim_start=.1),
+                               source_duration=1.0)
+        render_video(source, preview, short)
+        short_info = probe_video(preview)
+        if not (.3 <= float(short_info["format"]["duration"]) <= 1.05):
+            raise RuntimeError("FFmpeg edited preview trim failed")
+        if not any(s.get("codec_type") == "video" and s.get("width") == 360
+                   and s.get("height") == 640 for s in short_info.get("streams", ())):
+            raise RuntimeError("FFmpeg edited preview aspect failed")
         info = probe_video(output)
         if output.stat().st_size < 1024 or not any(
             s.get("codec_type") == "video" and s.get("width") == 360 and s.get("height") == 640
@@ -94,6 +106,13 @@ def main() -> None:
             raise RuntimeError("Downloader UI did not recognize a profile URL")
         if not window.down_button.isEnabled():
             raise RuntimeError("Download action is not available")
+        editor = window.editor_workspace
+        if editor.clip_list.count() != 0:
+            raise RuntimeError("Studio should start with empty media library")
+        if editor.export_one_button.isEnabled():
+            raise RuntimeError("Studio must disable export until a clip is opened")
+        if editor.inspector.count() != 4:
+            raise RuntimeError("Missing media editor inspector sections")
         window.close()
         return
     if args.doctor:
