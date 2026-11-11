@@ -39,3 +39,26 @@ def test_private_grant_not_persisted(tmp_path):
     with s._connect() as db:
         row=db.execute("select creator,evidence from sources").fetchone()
         assert row["creator"]==row["evidence"]==""
+
+
+def test_blur_preview_matches_rendered_background(tmp_path):
+    """Blur-fit frame must not silently show black padded bars."""
+    import shutil
+    import subprocess
+    from douyinhehe.studio_engine import extract_preview_frame
+
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        pytest.skip("FFmpeg and FFprobe required")
+    clip = tmp_path / "wide.mp4"
+    frame = tmp_path / "blur.png"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=yellow:s=320x240:d=1",
+        "-c:v", "mpeg4", str(clip),
+    ], check=True, capture_output=True, timeout=45)
+    extract_preview_frame(clip, frame, fit="blur", seconds=.1, width=360, height=640)
+    with Image.open(frame).convert("RGB") as image:
+        r, g, b = image.getpixel((10, 10))
+        assert r > 130 and g > 130 and b < 130, (
+            "Blur background should fill the frame, not display black bars."
+        )
