@@ -976,6 +976,19 @@ class MainWindow(QMainWindow):
             self.log("Đã xóa metadata riêng tư cũ khỏi SQLite.")
             self.refresh_sources()
 
+    def on_ocr_check(self):
+        """Check packaged OCR offline, without blocking the GUI or downloading models."""
+        from .ocr_support import offline_ocr_smoke_test
+
+        def done(result):
+            count = result.get("recognized_lines", 0)
+            models = result.get("models", 0)
+            message = f"OCR offline hoạt động: {models} model, nhận dạng {count} dòng thử."
+            self.log(message)
+            QMessageBox.information(self, "Kiểm tra OCR offline", message)
+
+        self.job("Kiểm tra OCR offline", lambda progress: offline_ocr_smoke_test(), done)
+
     def on_downloader_check(self):
         status = downloader_status()
         message = f"Phiên bản: {status.version or 'chưa có'}\nNguồn: {status.origin}\n{status.diagnostic}"
