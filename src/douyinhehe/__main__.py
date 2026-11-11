@@ -119,6 +119,25 @@ def main() -> None:
             raise RuntimeError("Open-in-Studio must wait for actual downloaded video")
         if window.session_status.objectName() != "statusPill":
             raise RuntimeError("Desktop status presentation missing")
+        if editor.clip_count_label.text() != "0 clip":
+            raise RuntimeError("Editor library must show its real clip count")
+        first_theme = window.theme_mode
+        window.toggle_theme()
+        if window.theme_mode == first_theme:
+            raise RuntimeError("Light/dark toggle did not change the theme")
+        window.toggle_theme()
+        if window.theme_mode != first_theme:
+            raise RuntimeError("Theme toggle failed to restore the original state")
+        window.find_page.setText("phụ đề")
+        window._navigate_from_search()
+        if window.nav.currentRow() != 3:
+            raise RuntimeError("Search navigation did not open the requested page")
+        editor.brightness.setValue(.2)
+        state = editor._capture_edit_state()
+        editor.brightness.setValue(0)
+        editor._restore_edit_state(state)
+        if abs(editor.brightness.value() - .2) > .01:
+            raise RuntimeError("Per-clip edit state cannot be restored")
         window._focus_download_input()
         if window.nav.currentRow() != 1 or not window.download_urls.hasFocus():
             raise RuntimeError("Ctrl+L navigation target is not functional")
