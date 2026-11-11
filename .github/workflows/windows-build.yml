@@ -10,6 +10,30 @@ concurrency:
 permissions:
   contents: write
 jobs:
+  ui-quick:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install basic Qt UI packages
+        shell: pwsh
+        run: |
+          python -m pip install -e '.[gui]'
+          if ($LASTEXITCODE -ne 0) { throw 'UI dependency install failed' }
+      - name: Run console GUI smoke with startup diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ux-preview | Out-Null
+          python -m douyinhehe --ui-smoke-test --ui-smoke-file ux-preview/smoke.ok
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path ux-preview/smoke.ok)) {
+            throw 'GUI startup failed; inspect Python traceback above'
+          }
   build:
     runs-on: windows-latest
     timeout-minutes: 65
