@@ -72,6 +72,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="DouyinhehePro")
     parser.add_argument("--self-test", action="store_true", help="Check packaged dependencies, then exit")
     parser.add_argument("--ui-smoke-test", action="store_true", help="Construct UI without opening a window")
+    parser.add_argument("--ui-smoke-file", default="", help=argparse.SUPPRESS)
     parser.add_argument("--ocr-self-test", action="store_true", help="Run bundled OCR offline inference test")
     parser.add_argument("--render-self-test", action="store_true", help="Render one synthetic clip using bundled FFmpeg")
     parser.add_argument("--version", action="store_true", help="Print application version")
@@ -130,6 +131,12 @@ def main() -> None:
         if editor.clear_button.isEnabled() or editor.clip_count_label.text() != "0 clip":
             raise RuntimeError("Editor library empty state is inconsistent")
         window.close()
+        if args.ui_smoke_file:
+            from pathlib import Path
+            # A windowed PyInstaller executable may not reliably communicate
+            # Python exceptions via its exit code. The marker is created only
+            # after every GUI invariant has succeeded.
+            Path(args.ui_smoke_file).write_text("DOUYINHEHE_UI_SMOKE_OK\\n", encoding="utf-8")
         return
     if args.doctor:
         from .diagnostics import downloader_status
