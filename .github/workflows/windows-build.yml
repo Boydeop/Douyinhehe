@@ -109,6 +109,11 @@ jobs:
           if (-not $compiler) { throw 'NSIS makensis.exe unavailable' }
           & $compiler /V2 scripts/windows_installer.nsi
           if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          # NSIS may emit OutFile relative to the script directory.
+          if ((Test-Path scripts/DouyinhehePro-Setup-x64.exe) -and
+              -not (Test-Path DouyinhehePro-Setup-x64.exe)) {
+            Move-Item scripts/DouyinhehePro-Setup-x64.exe DouyinhehePro-Setup-x64.exe
+          }
           if (-not (Test-Path DouyinhehePro-Setup-x64.exe)) { throw 'Setup EXE not created' }
       - name: Clean Windows installer smoke test
         shell: pwsh
