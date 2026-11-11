@@ -105,13 +105,15 @@ def _download_f2(url: str, folder: Path, max_items: int,
     except OSError as exc:
         raise RuntimeError(f"Không chạy được F2 worker: {type(exc).__name__}") from exc
     from .logging_support import redact
-    diagnostic = redact(((proc.stderr or "") + "\\n" + (proc.stdout or ""))[-1600:]).strip()
+    diagnostic = redact(((proc.stderr or "") + "\n" + (proc.stdout or ""))[-1600:]).strip()
     if proc.returncode:
         detail = diagnose_failure(diagnostic)
         raise RuntimeError(f"F2 ({mode}) lỗi mã {proc.returncode}. {detail}. "
                            f"Thông tin kỹ thuật: {diagnostic[:650] or 'không có'}")
     after = snapshot()
-    files = sorted(p for p in after if p not in previous or previous[p] != after[p])
+    # Do not report empty/partial files as successful downloads.
+    files = sorted(p for p in after if after[p][0] >= 1024 and
+                   (p not in previous or previous[p] != after[p]))
     if not files:
         raise RuntimeError(
             f"F2 ({mode}) kết thúc nhưng không ghi video MP4 mới. "
@@ -240,6 +242,12 @@ def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Stor
         detail = redact(str(exc))[-700:]
         raise RuntimeError(f"yt-dlp: {diagnose_failure(detail)}. "
                            f"Chi tiết: {detail}") from exc
+    if not outputs:
+        raise RuntimeError(
+            "yt-dlp kết thúc nhưng không tạo video mới. Nguồn có thể đã tải trước "
+            "(download archive), đã hết hạn hoặc bị Douyin từ chối. "
+            "Không đánh dấu tác vụ là tải thành công."
+        )
     for file in outputs:
         store.update_download(url, file)
     return outputs
