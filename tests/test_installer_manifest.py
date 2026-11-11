@@ -23,3 +23,14 @@ def test_manifest_rejects_malformed_package_path(tmp_path):
     root.mkdir()
     with pytest.raises(ValueError, match="Thiếu thư mục"):
         generate(root, tmp_path / "manifest.nsh")
+
+
+def test_nsis_manifest_include_is_relative_to_script(tmp_path):
+    """Regression for PR #12 CI: scripts/scripts/generated_uninstall.nsh."""
+    from pathlib import Path
+    script = (Path(__file__).parents[1] / "scripts" / "windows_installer.nsi").read_text(
+        encoding="utf-8"
+    )
+    assert '!include "generated_uninstall.nsh"' in script
+    assert '${__FILEDIR__}' not in script
+    assert "RMDir /r" not in script
