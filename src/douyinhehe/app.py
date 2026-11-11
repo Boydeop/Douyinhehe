@@ -398,6 +398,16 @@ class MainWindow(QMainWindow):
         self.download_urls.setMinimumHeight(145)
         src.addWidget(QLabel("Liên kết video hoặc kênh"))
         src.addWidget(self.download_urls)
+        quick_links = QHBoxLayout()
+        paste_link = QPushButton("Dán liên kết")
+        paste_link.setToolTip("Dán link hoặc nội dung chia sẻ từ clipboard")
+        paste_link.clicked.connect(self.paste_download_links)
+        quick_links.addWidget(paste_link)
+        clear_links = QPushButton("Xóa liên kết")
+        clear_links.clicked.connect(self.download_urls.clear)
+        quick_links.addWidget(clear_links)
+        quick_links.addStretch(1)
+        src.addLayout(quick_links)
         self.down_selected_btn = QPushButton("Chỉ lấy video đang mở từ link kênh (?vid)")
         self.down_selected_btn.setToolTip("Dùng video được chọn trong link hồ sơ, không tải cả kênh.")
         self.down_selected_btn.clicked.connect(self.on_download_selected_video)
@@ -426,6 +436,13 @@ class MainWindow(QMainWindow):
         rights_help.setWordWrap(True)
         rights_help.setObjectName("hintText")
         rights_layout.addWidget(rights_help)
+        public_note = QLabel(
+            "Chế độ mặc định không yêu cầu nhập cookie. Chỉ tải nội dung công khai "
+            "khi Douyin cho phép truy cập; ứng dụng sẽ không vượt xác minh hoặc CAPTCHA."
+        )
+        public_note.setObjectName("hintText")
+        public_note.setWordWrap(True)
+        rights_layout.addWidget(public_note)
         src.addWidget(rights)
         columns.addWidget(sources, 3)
 
@@ -438,6 +455,10 @@ class MainWindow(QMainWindow):
         browse = QPushButton("Chọn thư mục")
         browse.clicked.connect(lambda: self._folder(self.down_folder))
         form.addWidget(browse)
+        open_downloads = QPushButton("Mở thư mục video")
+        open_downloads.setToolTip("Mở thư mục đầu ra bằng Windows Explorer")
+        open_downloads.clicked.connect(self.open_download_folder)
+        form.addWidget(open_downloads)
         form.addWidget(QLabel("Số video tối đa"))
         self.down_limit = QSpinBox()
         self.down_limit.setRange(0, 5000)
@@ -481,6 +502,25 @@ class MainWindow(QMainWindow):
         self.down_mode.currentIndexChanged.connect(self.on_down_urls_change)
         self.on_down_urls_change()
         self.refresh_download_history()
+
+    def paste_download_links(self):
+        """Explicit clipboard action; no cookie reading or network request."""
+        raw = QApplication.clipboard().text().strip()
+        if not raw:
+            self.down_detect.setText("Clipboard đang trống. Hãy sao chép một liên kết Douyin.")
+            return
+        existing = self.download_urls.toPlainText().strip()
+        self.download_urls.setPlainText((existing + "\n" + raw).strip() if existing else raw)
+
+    def open_download_folder(self):
+        """Open a local folder only, never interpret output paths as URLs."""
+        try:
+            folder = Path(self.down_folder.text()).expanduser().resolve()
+            folder.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
+                raise RuntimeError("Windows không mở được thư mục đã chọn.")
+        except (ValueError, PermissionError, RuntimeError, OSError) as exc:
+            self.alert(exc)
 
     def refresh_download_history(self):
         rows = [row for row in self.store.sources() if row.get("file_path")]
