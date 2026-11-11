@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QDateTime, Qt, Signal, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateTimeEdit, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
@@ -35,6 +35,7 @@ from .publisher import PostizClient
 from .subtitles import transcribe_to_srt, translate_srt, text_to_voice
 from .studio_ui import MaskCanvas
 from .studio_engine import MaskRegion, suggest_chinese_regions, extract_preview_frame
+from .theme import STYLESHEET
 from PySide6.QtWidgets import QListWidget, QStackedWidget, QSlider, QFrame
 from dataclasses import replace
 import hashlib
@@ -83,7 +84,7 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio 3.5 RC1 · Video Editor & Douyin")
+        self.setWindowTitle("Douyinhehe Studio 3.6 · Cookie-free First")
         self.setMinimumSize(1080, 700)
         self.resize(1450, 900)
         self.store = Store()
@@ -96,32 +97,40 @@ class MainWindow(QMainWindow):
         outer.setSpacing(0)
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(228)
+        sidebar.setFixedWidth(246)
         navbox = QVBoxLayout(sidebar)
         navbox.setContentsMargins(12, 20, 12, 15)
-        brand = QLabel("▶  DOUYINHEHE")
+        brand = QLabel("◉  DOUYINHEHE")
         brand.setObjectName("brand")
         navbox.addWidget(brand)
-        navbox.addWidget(QLabel("AFFILIATE VIDEO STUDIO"))
+        caption = QLabel("DESKTOP CREATOR WORKSPACE")
+        caption.setObjectName("sidebarCaption")
+        navbox.addWidget(caption)
         self.nav = QListWidget()
         self.nav.setObjectName("navigation")
         self.nav.setSpacing(3)
         navbox.addWidget(self.nav, 1)
-        navbox.addWidget(QLabel("Chỉ video có quyền sử dụng"))
+        footer = QLabel("Nội dung được cấp phép  •  Xử lý cục bộ")
+        footer.setObjectName("sidebarFooter")
+        footer.setWordWrap(True)
+        navbox.addWidget(footer)
         outer.addWidget(sidebar)
         workspace = QWidget()
         body = QVBoxLayout(workspace)
         body.setContentsMargins(20, 16, 20, 10)
-        heading = QLabel("Douyinhehe Workspace")
+        heading = QLabel("Không gian sáng tạo")
         heading.setObjectName("heading")
         headline = QHBoxLayout()
         headline.addWidget(heading)
         headline.addStretch(1)
+        self.session_status = QLabel("●  Sẵn sàng")
+        self.session_status.setObjectName("statusPill")
+        headline.addWidget(self.session_status)
         log_toggle = QPushButton("Nhật ký")
         log_toggle.setToolTip("Hiện hoặc ẩn nhật ký kỹ thuật")
         headline.addWidget(log_toggle)
         body.addLayout(headline)
-        intro = QLabel("Douyinhehe 3.5 RC1  |  Tải Douyin F2  |  Video editor  |  OCR offline")
+        intro = QLabel("THƯ VIỆN   /   TẢI VIDEO   /   BIÊN TẬP   /   XUẤT BẢN")
         intro.setObjectName("subheading")
         body.addWidget(intro)
         self.pages = QStackedWidget()
@@ -161,70 +170,32 @@ class MainWindow(QMainWindow):
             self.nav.addItem(title)
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.nav.setCurrentRow(1)
-        self.setStyleSheet("""
-            QMainWindow, QWidget { background: #0f1117; color: #f4f6f9;
-                font-family: 'Segoe UI'; font-size: 14px; }
-            QFrame#sidebar, QListWidget#navigation { background: #171a22; border: none; }
-            QLabel#brand { font-size: 20px; font-weight: 800; color: #ff5a62; padding: 7px 0 17px 0; }
-            QLabel#heading { font-size: 24px; font-weight: 750; padding: 4px 0; }
-            QLabel#subheading, QLabel#hintText, QLabel#pageDescription {
-                color: #b5bbc8; font-size: 13px; padding: 3px 0; }
-            QLabel#pageTitle { font-size: 24px; font-weight: 750; padding: 4px 0; }
-            QListWidget#navigation::item { padding: 14px 13px; margin: 3px 0;
-                border-radius: 9px; color: #dde2e9; }
-            QListWidget#navigation::item:selected { background: #41262b;
-                color: #ffffff; border-left: 4px solid #fa5f66; }
-            QListWidget#navigation::item:hover { background: #292f3a; }
-            QGroupBox { border: 1px solid #383f4b; border-radius: 12px;
-                margin-top: 20px; padding: 17px 13px 13px 13px; font-weight: 650;
-                background: #1b2029; }
-            QGroupBox::title { subcontrol-origin: margin; left: 15px; top: 3px;
-                padding: 0 7px; color: #f2f5f8; }
-            QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
-            QDateTimeEdit {
-                background: #252b35; border: 1px solid #525b6b;
-                border-radius: 7px; padding: 9px; color: #f4f6f9;
-                selection-background-color: #8c363e; }
-            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
-            QSpinBox:focus, QDoubleSpinBox:focus, QDateTimeEdit:focus {
-                border: 2px solid #ff727b; }
-            QComboBox::drop-down { border: none; width: 28px; }
-            QPushButton { background: #303743; color: #f7f8fa;
-                border: 1px solid #515967; border-radius: 8px;
-                padding: 10px 14px; min-height: 26px; font-weight: 650; }
-            QPushButton:hover { background: #424a56; border-color: #747c8b; }
-            QPushButton:pressed { background: #6e303b; }
-            QPushButton:focus { border: 2px solid #ff8b95; }
-            QPushButton#primaryAction { background: #e34251; color: #ffffff;
-                border: 1px solid #ef6170; font-size: 14px; }
-            QPushButton#primaryAction:hover { background: #f05260; }
-            QPushButton:disabled { background: #2a2d34; color: #9a9faa; }
-            QCheckBox { padding: 9px 3px; spacing: 10px; }
-            QScrollArea { border: none; }
-            QScrollBar:vertical { background: #1b2029; width: 12px; }
-            QScrollBar::handle:vertical { background: #495361; border-radius: 6px; }
-            QProgressBar { border: 1px solid #505968; border-radius: 7px;
-                background: #292f39; text-align: center; min-height: 27px; }
-            QProgressBar::chunk { background: #ea4d5e; border-radius: 6px; }
-            QSlider::groove:horizontal { height: 7px; background: #4a515b; border-radius: 3px; }
-            QSlider::handle:horizontal { background: #ff6774; width: 16px; margin: -5px 0; border-radius: 7px; }
-            QToolTip { background: #272d38; color: white; border: 1px solid #6d7887; }
-            QTabWidget::pane { border: 1px solid #3b4351; border-radius: 8px; background: #1c222c; }
-            QTabBar::tab { background: #242b37; color: #d7deea; border-radius: 7px;
-                padding: 11px 14px; margin: 3px; }
-            QTabBar::tab:selected { background: #443039; color: white;
-                border-bottom: 2px solid #ff6474; }
-            QSplitter::handle { background: #3b4351; width: 6px; }
-            QListWidget { background: #1d232e; border: 1px solid #404958;
-                border-radius: 8px; padding: 4px; }
-            QListWidget::item { padding: 8px; border-radius: 5px; }
-            QListWidget::item:selected { background: #33495e; color: #ffffff; }
-        """)
+        self._install_shortcuts()
+        self.setStyleSheet(STYLESHEET)
         self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
+
+    def _install_shortcuts(self):
+        """Keyboard-first access to the primary working surfaces."""
+        for key, page in (("Ctrl+1", 1), ("Ctrl+2", 2), ("Ctrl+3", 3),
+                          ("Ctrl+4", 7), ("Ctrl+5", 5)):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.activated.connect(lambda index=page: self.nav.setCurrentRow(index))
+        focus = QShortcut(QKeySequence("Ctrl+L"), self)
+        focus.activated.connect(self._focus_download_input)
+
+    def _focus_download_input(self):
+        self.nav.setCurrentRow(1)
+        self.download_urls.setFocus()
 
     def log(self, msg):
         line = redact(str(msg))[:1500]
         self.logs.appendPlainText(line)
+        if "✗" in line or "lỗi" in line.lower():
+            self.session_status.setText("●  Cần kiểm tra")
+        elif line.startswith("✓"):
+            self.session_status.setText("●  Hoàn tất")
+        elif line.startswith("▶"):
+            self.session_status.setText("●  Đang xử lý")
         try:
             write_event("desktop", line)
         except OSError:
@@ -315,7 +286,9 @@ class MainWindow(QMainWindow):
         heading = QLabel("Tải video Douyin")
         heading.setObjectName("pageTitle")
         layout.addWidget(heading)
-        description = QLabel("Dán link video hoặc hồ sơ. Ứng dụng tự nhận dạng nguồn và chọn engine hỗ trợ.")
+        description = QLabel("Dán link Douyin công khai: không cần tự xuất cookie hay đăng nhập. "
+                             "Tải được hay không còn tùy quyền truy cập; nếu gặp 403/CAPTCHA, "
+                             "ứng dụng dừng và hiển thị lý do.")
         description.setObjectName("pageDescription")
         description.setWordWrap(True)
         layout.addWidget(description)
@@ -328,7 +301,7 @@ class MainWindow(QMainWindow):
         sources = QGroupBox("01   Nguồn nội dung")
         src = QVBoxLayout(sources)
         src.setSpacing(12)
-        self.download_urls = paragraph("Mỗi dòng một URL Douyin. Có thể dán nguyên đoạn chia sẻ.", 145)
+        self.download_urls = paragraph("Dán các link HTTPS của Douyin, mỗi dòng một link hoặc nguyên đoạn chia sẻ...", 145)
         self.download_urls.setMinimumHeight(145)
         src.addWidget(QLabel("Liên kết video hoặc kênh"))
         src.addWidget(self.download_urls)
@@ -392,18 +365,23 @@ class MainWindow(QMainWindow):
         self.down_progress.setValue(0)
         self.down_progress.setFormat("Sẵn sàng")
         form.addWidget(self.down_progress)
-        self.down_button = QPushButton("Bắt đầu tải video")
+        self.down_button = QPushButton("↓  Tải nội dung công khai đã được phép")
         self.down_button.setObjectName("primaryAction")
         self.down_button.setMinimumHeight(45)
         self.down_button.clicked.connect(self.on_download)
         form.addWidget(self.down_button)
+        self.down_open_studio = QPushButton("▶  Mở video vừa tải trong Studio")
+        self.down_open_studio.setEnabled(False)
+        self.down_open_studio.setToolTip("Chuyển sang tab chỉnh sửa với các MP4 đã tải trong phiên này")
+        self.down_open_studio.clicked.connect(lambda: self.nav.setCurrentRow(2))
+        form.addWidget(self.down_open_studio)
         showlog = QPushButton("Xuất nhật ký chẩn đoán (đã che khóa API)")
         showlog.clicked.connect(self.on_export_logs)
         form.addWidget(showlog)
         columns.addWidget(options, 2)
         layout.addWidget(row)
 
-        history = QGroupBox("03   Video đã lưu gần đây")
+        history = QGroupBox("03   Thư viện tải gần đây")
         history_layout = QVBoxLayout(history)
         self.down_history = QPlainTextEdit()
         self.down_history.setReadOnly(True)
@@ -505,23 +483,26 @@ class MainWindow(QMainWindow):
         self.down_progress.setFormat("Đang tải...")
         def task(report):
             completed = 0
+            downloaded_files = []
             failed = []
             for index, grant in enumerate(grants, 1):
                 report(f"Nguồn {index}/{len(grants)}: {grant.original_url}")
                 try:
                     self.store.save_source(grant, niche)
-                    completed += len(download_authorized(
-                        grant.original_url, folder, grant, self.store, limit, report, mode=mode))
+                    files = download_authorized(
+                        grant.original_url, folder, grant, self.store, limit, report, mode=mode)
+                    downloaded_files.extend(files)
+                    completed += len(files)
                 except Exception as exc:
                     failed.append(f"{index}: {redact(str(exc))}")
                     report(f"Không thành công nguồn {index}: {redact(str(exc))}")
             if failed and completed == 0:
                 raise RuntimeError("Không tải được video. Chi tiết từ engine:\n" +
                                    "\n".join(failed[:4]))
-            return completed, failed
+            return completed, failed, downloaded_files
 
         def done(result):
-            completed, failed = result
+            completed, failed, downloaded_files = result
             self.down_button.setEnabled(True)
             self.down_progress.setRange(0, 100)
             self.down_progress.setValue(100 if not failed else 0)
@@ -529,6 +510,9 @@ class MainWindow(QMainWindow):
                                          f"{completed} video, {len(failed)} nguồn lỗi")
             self.refresh_sources()
             self.refresh_download_history()
+            if downloaded_files:
+                self.editor_workspace.import_files(downloaded_files)
+                self.down_open_studio.setEnabled(True)
             if failed:
                 QMessageBox.warning(self, "Một số nguồn chưa tải được",
                                     "\n".join(failed[:8]) + "\nBạn có thể thử từng URL video.")
