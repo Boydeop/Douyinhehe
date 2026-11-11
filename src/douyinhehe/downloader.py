@@ -73,6 +73,40 @@ def f2_worker_executable() -> Path | None:
     return None
 
 
+def offline_downloader_health() -> dict[str, dict[str, object]]:
+    """Check installed downloader binaries without accessing Douyin or cookies.
+
+    A green result means the local engine starts, NOT that a live video is
+    accessible. Do not pass credentials to workers or silently upgrade tools.
+    """
+    from .logging_support import redact
+
+    report: dict[str, dict[str, object]] = {}
+    worker = f2_worker_executable()
+    if worker is None:
+        report["F2"] = {"ready": False, "detail": "Thiếu F2 worker. Giải nén đầy đủ bản portable."}
+    else:
+        try:
+            result = subprocess.run(
+                [str(worker), "--doctor"], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30, check=False,
+            )
+            detail = redact(((result.stdout or "") + "\n" + (result.stderr or "")).strip())[:400]
+            report["F2"] = {
+                "ready": result.returncode == 0,
+                "detail": detail if result.returncode == 0 else (
+                    "F2 worker không chạy được: " + (detail or str(result.returncode))),
+            }
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            report["F2"] = {"ready": False, "detail": f"F2 worker lỗi: {type(exc).__name__}"}
+    ytdlp = downloader_status()
+    report["yt-dlp"] = {
+        "ready": bool(ytdlp.ready),
+        "detail": redact(f"{ytdlp.origin}: {ytdlp.version} · {ytdlp.diagnostic}")[:400],
+    }
+    return report
+
+
 def _download_f2(url: str, folder: Path, max_items: int,
                  progress: Callable[[str], None] | None, *, mode: str) -> list[Path]:
     """Run the isolated F2 worker in one/post mode and verify actual media output."""
