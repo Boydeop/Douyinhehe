@@ -106,3 +106,29 @@ def test_per_clip_mask_style_follows_saved_state():
     edit = state(mask_type=1, masks=(MaskRegion(.1, .6, .8, .12),))
     preset = preset_from_state(edit, FORMATS)
     assert preset.masks[0].mode == "solid"
+
+
+def test_project_accepts_3_8_runtime_fields_but_does_not_persist_them(tmp_path):
+    clip = tmp_path / "user_video.mp4"
+    clip.write_bytes(b"authorized video reference")
+    saved = state(size=2, fit=1, mask_type=1, brightness=.2)
+    saved.update({"output_size": (1280, 720), "fit_mode": "pad",
+                  "mask_mode": "solid"})
+    target = tmp_path / "retained.dhyproj"
+    save_project(target, [(clip, saved)], clip)
+    serialized = target.read_text(encoding="utf-8")
+    assert "output_size" not in serialized
+    assert "mask_mode" not in serialized
+    entries, selected = load_project(target)
+    assert selected == clip
+    assert entries[0][1]["size"] == 2
+    assert entries[0][1]["fit"] == 1
+
+
+def test_project_rejects_unrelated_runtime_fields(tmp_path):
+    clip = tmp_path / "x.mp4"
+    clip.write_bytes(b"x")
+    bad = state()
+    bad["password"] = "must not be saved"
+    with pytest.raises(ValueError, match="cấu trúc"):
+        save_project(tmp_path / "bad.dhyproj", [(clip, bad)], clip)
