@@ -95,6 +95,61 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
+      - name: Record release component inventory and hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = @'
+          import hashlib
+          import importlib.metadata
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path("dist/DouyinhehePro")
+          names = (
+              "DouyinhehePro.exe", "bin/ffmpeg.exe", "bin/ffprobe.exe",
+              "bin/DouyinF2Worker.exe",
+          )
+          files = {}
+          for name in names:
+              file = root / name
+              if not file.is_file():
+                  raise RuntimeError("Missing packaged component: " + name)
+              digest = hashlib.sha256()
+              with file.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              files[name] = {
+                  "sha256": digest.hexdigest(),
+                  "bytes": file.stat().st_size,
+              }
+          packages = {}
+          for name in ("PySide6", "PyInstaller", "yt-dlp", "rapidocr",
+                       "onnxruntime", "Pillow", "faster-whisper", "f2"):
+              try:
+                  packages[name] = importlib.metadata.version(name)
+              except importlib.metadata.PackageNotFoundError:
+                  packages[name] = "not in parent build environment"
+          manifest = {
+              "application": "DouyinhehePro",
+              "version": "3.8.0rc1",
+              "git_commit": os.environ.get("GITHUB_SHA", ""),
+              "build_utc": datetime.now(timezone.utc).isoformat(),
+              "platform": "Windows x64 portable onedir",
+              "files": files,
+              "build_package_versions": packages,
+              "status": "Release candidate; live Douyin and commercial license approval pending",
+          }
+          (root / "BUILD_MANIFEST.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          '@
+          $source | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Build manifest generation failed' }
+          Copy-Item docs/PRODUCTION_GATE_V3_8.md dist/DouyinhehePro/PRODUCTION_GATE.md
+
       - name: ZIP portable release folder (streamed)
         shell: pwsh
         run: |
@@ -125,7 +180,7 @@ jobs:
             DouyinhehePro-Windows-x64.zip
             SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - name: Publish GitHub Release on protected release branch
         if: startsWith(github.ref, 'refs/heads/release/v') && github.event_name == 'push'
