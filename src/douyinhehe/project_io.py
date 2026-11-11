@@ -21,6 +21,7 @@ MAX_BYTES = 2_000_000
 MAX_CLIPS = 500
 EXTENSION = ".dhyproj"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".m4v", ".webm"}
+_RUNTIME_FIELDS = {"output_size", "fit_mode", "mask_mode"}
 _FIELDS = {
     "size", "fit", "brightness", "contrast", "saturation", "trim_start",
     "trim_end", "mask_type", "masks", "cta", "source_url", "subtitle", "voice",
@@ -43,7 +44,8 @@ def _decimal(value: object, minimum: float, maximum: float, name: str) -> float:
 
 
 def normalize_state(raw: dict, *, encode: bool) -> dict:
-    if not isinstance(raw, dict) or set(raw) != _FIELDS:
+    if not isinstance(raw, dict) or (set(raw) != _FIELDS and
+                                         set(raw) != _FIELDS | _RUNTIME_FIELDS):
         raise ValueError("Dự án có cấu trúc thông số chỉnh sửa không hợp lệ.")
     state: dict = {
         "size": _index(raw["size"], 3, "kích thước"),
@@ -63,7 +65,7 @@ def normalize_state(raw: dict, *, encode: bool) -> dict:
         if not isinstance(value, str) or len(value) > limit or "\x00" in value:
             raise ValueError(f"Trường {name} không hợp lệ.")
         # Sensitive URL query parameters must not be persisted in project files.
-        state[name] = redact(value) if name == "source_url" and encode else value
+        state[name] = (redact(value) if name == "source_url" and encode else value)
     regions = parse_regions(raw["masks"])
     state["masks"] = [asdict(region) for region in regions] if encode else regions
     return state
