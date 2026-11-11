@@ -1,6 +1,32 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.7.0 RC1 audited desktop experience (dual-theme Qt, per-clip edits, offline downloader diagnostics)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 4.0.0 RC1 production-hardening candidate (offline projects, per-clip batch exports, Windows validation)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+
+## 4.0 production-hardening candidate
+
+**New local project file:** Use `Mở dự án (.dhyproj)` and `Lưu dự án` in Studio to
+resume work after restarting. The project contains only source file paths and
+per-clip edit parameters, not embedded videos or credentials. When overwriting
+a project, the previous version is retained as a `.dhyproj.bak` recovery copy.
+Files moved or deleted outside Douyinhehe must be restored manually.
+
+**Correct per-clip batch export:** `Xuất toàn bộ` now prepares an individual
+FFmpeg preset for each video, preserving its own trim, color, mask, subtitle,
+CTA and narration settings. Unedited clips use clean default settings. Always
+preview affected clips and confirm the rights to edit/repost.
+
+**Portable output:** Windows uses atomic no-overwrite rename, including
+removable exFAT drives; the source and existing outputs are not overwritten.
+The package remains a **portable Windows application folder**, not a single
+fully self-contained EXE.
+
+**Release status:** This is a release candidate, not a certified production
+release. Automated unit tests, Windows packaging/FFmpeg/OCR/Qt smoke and a
+user-side acceptance checklist are required. Live Douyin network conditions,
+copyright permissions, third-party binary licensing, provider OAuth, signed
+installer and interactive playback cannot be proven by CI alone.
+
+See [production readiness report](docs/PRODUCTION_READINESS_4_0.md).
 
 ## 3.7 audit upgrade (November 2026)
 

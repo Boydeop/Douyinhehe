@@ -80,21 +80,59 @@ jobs:
           # Three ONNX model assets must be physically present inside the portable folder.
           $models = @(Get-ChildItem -Path dist/DouyinhehePro -Recurse -Filter '*.onnx' -File)
           if ($models.Count -lt 3) { throw "Bundled OCR model assets missing (found $($models.Count))" }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --ocr-self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Frozen OCR inference failed: never publish a broken offline OCR build' }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --render-self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Frozen FFmpeg masked render failed' }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged app self-test failed' }
           & ./dist/DouyinhehePro/bin/DouyinF2Worker.exe --doctor
           if ($LASTEXITCODE -ne 0) { throw 'Portable F2 worker unavailable' }
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged downloader diagnostics failed' }
+          # Windowed PyInstaller executables are not guaranteed to synchronously
+          # update $LASTEXITCODE when invoked with &. Wait and inspect ExitCode.
+          $appExe = (Resolve-Path 'dist/DouyinhehePro/DouyinhehePro.exe').Path
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --ui-smoke-test
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
+          foreach ($flag in @('--ocr-self-test', '--render-self-test',
+                               '--self-test', '--doctor', '--ui-smoke-test')) {
+            $proc = Start-Process -FilePath $appExe -ArgumentList $flag -PassThru -Wait
+            if ($proc.ExitCode -ne 0) { throw "Frozen app $flag failed: exit $($proc.ExitCode)" }
+          }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
+      - name: Build one-file Windows Setup EXE (NSIS)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install nsis.install --version=3.12.0 --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installer compiler installation failed' }
+          python scripts/generate_uninstall_manifest.py dist/DouyinhehePro scripts/generated_uninstall.nsh
+          if ($LASTEXITCODE -ne 0) { throw 'Uninstall manifest generation failed' }
+          $candidates = @(
+            'C:\Program Files (x86)\NSIS\makensis.exe',
+            'C:\Program Files\NSIS\makensis.exe'
+          )
+          $compiler = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) { throw 'NSIS makensis.exe unavailable' }
+          & $compiler /V2 scripts/windows_installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          # NSIS may emit OutFile relative to the script directory.
+          if ((Test-Path scripts/DouyinhehePro-Setup-x64.exe) -and
+              -not (Test-Path DouyinhehePro-Setup-x64.exe)) {
+            Move-Item scripts/DouyinhehePro-Setup-x64.exe DouyinhehePro-Setup-x64.exe
+          }
+          if (-not (Test-Path DouyinhehePro-Setup-x64.exe)) { throw 'Setup EXE not created' }
+      - name: Clean Windows installer smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = Join-Path $env:RUNNER_TEMP 'DouyinheheFreshInstall'
+          $setup = (Resolve-Path 'DouyinhehePro-Setup-x64.exe').Path
+          $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Setup exited $($process.ExitCode)" }
+          $installed = Join-Path $installDir 'DouyinhehePro.exe'
+          if (-not (Test-Path $installed)) { throw 'Clean install missing EXE' }
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          foreach ($flag in @('--self-test', '--ui-smoke-test', '--render-self-test')) {
+            $smoke = Start-Process -FilePath $installed -ArgumentList $flag -PassThru -Wait
+            if ($smoke.ExitCode -ne 0) { throw "Clean installed app $flag failed: exit $($smoke.ExitCode)" }
+          }
+          $uninstall = Join-Path $installDir 'Uninstall.exe'
+          $process = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Uninstaller exited $($process.ExitCode)" }
       - name: ZIP portable release folder (streamed)
         shell: pwsh
         run: |
@@ -116,13 +154,16 @@ jobs:
         shell: pwsh
         run: |
           $hash = (Get-FileHash -Algorithm SHA256 -Path DouyinhehePro-Windows-x64.zip).Hash.ToLowerInvariant()
-          "$hash  DouyinhehePro-Windows-x64.zip" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          $setupHash = (Get-FileHash -Algorithm SHA256 -Path DouyinhehePro-Setup-x64.exe).Hash.ToLowerInvariant()
+          @("$hash  DouyinhehePro-Windows-x64.zip", "$setupHash  DouyinhehePro-Setup-x64.exe") |
+            Out-File -FilePath SHA256SUMS.txt -Encoding ascii
           Get-Content SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: DouyinhehePro-Windows-x64
           path: |
             DouyinhehePro-Windows-x64.zip
+            DouyinhehePro-Setup-x64.exe
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -135,7 +176,7 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}" -replace '^release/', ''
           if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release tag: $tag" }
-          gh release create $tag DouyinhehePro-Windows-x64.zip SHA256SUMS.txt `
+          gh release create $tag DouyinhehePro-Windows-x64.zip DouyinhehePro-Setup-x64.exe SHA256SUMS.txt `
             --target "${{ github.sha }}" --title "Douyinhehe Pro $tag · Windows x64" `
             --notes-file docs/RELEASE_NOTES.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release upload failed' }
