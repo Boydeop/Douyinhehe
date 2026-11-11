@@ -189,6 +189,9 @@ class EditorWorkspace(QWidget):
         self.play_button = QPushButton("▶ Phát")
         self.play_button.clicked.connect(self.play_pause)
         playback.addWidget(self.play_button)
+        restore = QPushButton("↩ Clip gốc")
+        restore.clicked.connect(self.restore_original)
+        playback.addWidget(restore)
         self.time_label = QLabel("00:00 / 00:00")
         playback.addWidget(self.time_label)
         self.seek = QSlider(Qt.Orientation.Horizontal)
@@ -352,7 +355,6 @@ class EditorWorkspace(QWidget):
         browse_row.addWidget(chooser)
         form.addLayout(browse_row)
         self.rights = QCheckBox("Tôi có quyền biên tập và sử dụng những clip này")
-        self.rights.setWordWrap(True)
         form.addWidget(self.rights)
         form.addWidget(QLabel("Bản xuất dùng H.264/AAC; file gốc luôn được giữ nguyên."))
         note = QLabel("“Xuất tất cả” áp dụng một preset cho toàn bộ clip. Các điểm cắt và vùng che sẽ dùng chung; "
@@ -504,6 +506,17 @@ class EditorWorkspace(QWidget):
         else:
             self.player.play()
             self.play_button.setText("⏸ Tạm dừng")
+
+    def restore_original(self):
+        if not self.source:
+            return
+        if self.player:
+            self.player.stop()
+            self.player.setSource(QUrl.fromLocalFile(str(self.source)))
+            self.player.setPosition(0)
+        self.preview_stack.setCurrentIndex(0)
+        self.play_button.setText("▶ Phát")
+        self.status_label.setText("Đã quay lại video gốc, các chỉnh sửa vẫn được giữ.")
 
     def _choose_optional(self, widget, kind):
         file, _ = QFileDialog.getOpenFileName(self, "Chọn tệp", "", kind)
@@ -659,6 +672,8 @@ class EditorWorkspace(QWidget):
             preset = self._authorized_preset()
             if not self._check_subtitles(preset):
                 return
+            if not self.output_folder.text().strip():
+                raise ValueError("Chưa chọn thư mục xuất.")
             folder = Path(self.output_folder.text()).expanduser().resolve()
             if not str(folder):
                 raise ValueError("Chưa chọn thư mục xuất.")
