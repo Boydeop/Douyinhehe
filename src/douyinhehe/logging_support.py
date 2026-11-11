@@ -15,6 +15,8 @@ _PATTERNS = (
     (re.compile(r"AIza[0-9A-Za-z_-]{20,}"), "[REDACTED_GEMINI_KEY]"),
     (re.compile(r"(?i)(bearer\s+)[0-9a-z_.~+/-]{8,}"), r"\1[REDACTED]"),
     (re.compile(r"(?i)((?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*)[\"']?[^\s,;\"']{5,}"), r"\1[REDACTED]"),
+    # Share-link URL query credentials must never leak into exported logs.
+    (re.compile(r"(?i)([?&](?:access_token|share_token|session_token|token|secret|password|signature|x-bogus|a_bogus)=)[^&#\s]+"), r"\1[REDACTED]"),
 )
 
 
