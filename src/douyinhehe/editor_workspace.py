@@ -352,9 +352,14 @@ class EditorWorkspace(QWidget):
             return self._error("Hãy hoàn thành render trước khi lưu dự án.")
         if not self.sources:
             return self._error("Chưa có clip nào để lưu.")
+        project_dir = user_data_dir() / "projects"
+        try:
+            project_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return self._error(str(exc))
         path, _ = QFileDialog.getSaveFileName(
             self, "Lưu dự án Douyinhehe",
-            str(user_data_dir() / "projects" / "MyStudio.dhyproj"),
+            str(project_dir / "MyStudio.dhyproj"),
             "Douyinhehe Project (*.dhyproj)")
         if not path:
             return
