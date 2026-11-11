@@ -592,8 +592,11 @@ class EditorWorkspace(QWidget):
                 return
             sample = preview_preset(preset, source_duration=self.source_duration)
             source = self.source
-            destination = (user_data_dir() / "previews" /
-                           f"edited-{hashlib.sha256(str(source).encode()).hexdigest()[:12]}.mp4")
+            # Do not replace a preview while Qt's player may keep it open on Windows.
+            destination = safe_output_path(
+                user_data_dir() / "previews",
+                Path("preview-" + hashlib.sha256(str(source).encode()).hexdigest()[:12] + ".mp4"),
+            )
         except (ValueError, PermissionError, FileNotFoundError) as exc:
             return self._error(str(exc))
         self._busy_state(True, "Đang dựng bản xem trước 5 giây…")
