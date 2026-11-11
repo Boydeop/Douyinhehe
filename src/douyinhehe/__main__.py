@@ -111,6 +111,11 @@ def main() -> None:
             raise RuntimeError("Studio should start with empty media library")
         if editor.export_one_button.isEnabled():
             raise RuntimeError("Studio must disable export until a clip is opened")
+        if editor.save_project_button.isEnabled() or not editor.open_project_button.isEnabled():
+            raise RuntimeError("Project controls must reflect the empty editor state")
+        from .project_io import SCHEMA_VERSION
+        if SCHEMA_VERSION != 1:
+            raise RuntimeError("Unsupported studio project format")
         if editor.inspector.count() != 4:
             raise RuntimeError("Missing media editor inspector sections")
         if editor.clip_list.objectName() != "clipLibrary":
