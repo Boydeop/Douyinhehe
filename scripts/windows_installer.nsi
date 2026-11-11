@@ -21,7 +21,7 @@ ShowUninstDetails show
 
 Section "Douyinhehe Pro" SecMain
   SetOutPath "$INSTDIR"
-  File /r "dist\DouyinhehePro\*.*"
+  File /r "..\dist\DouyinhehePro\*.*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\Douyinhehe Pro"
   CreateShortCut "$SMPROGRAMS\Douyinhehe Pro\Douyinhehe Studio.lnk" "$INSTDIR\DouyinhehePro.exe"
