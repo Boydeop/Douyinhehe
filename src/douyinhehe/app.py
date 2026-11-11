@@ -85,7 +85,7 @@ def group(name):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio 3.7 RC1 · Creator Workspace")
+        self.setWindowTitle("Douyinhehe Studio 4.0 RC2 · Creator Workspace")
         self.setMinimumSize(1080, 700)
         self.resize(1450, 900)
         self.store = Store()
