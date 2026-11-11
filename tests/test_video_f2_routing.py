@@ -115,3 +115,40 @@ def test_f2_zero_byte_mp4_is_not_success(tmp_path, monkeypatch):
     monkeypatch.setattr(downloader.subprocess, "run", fake_run)
     with pytest.raises(RuntimeError, match="không ghi video MP4 mới"):
         downloader._download_video_f2(VIDEO, tmp_path, None)
+
+
+def test_offline_engine_health_without_cookies_or_network(monkeypatch, tmp_path):
+    worker = tmp_path / "DouyinF2Worker.exe"
+    worker.write_bytes(b"placeholder")
+    monkeypatch.setattr(downloader, "f2_worker_executable", lambda: worker)
+    monkeypatch.setattr(downloader, "downloader_status",
+                        lambda: SimpleNamespace(ready=True, origin="local", version="2026.11.11",
+                                                diagnostic="Sẵn sàng"))
+    calls = []
+
+    def doctor(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="F2 ready", stderr="")
+
+    monkeypatch.setattr(downloader.subprocess, "run", doctor)
+    status = downloader.offline_downloader_health()
+    assert status["F2"]["ready"] is True
+    assert status["yt-dlp"]["ready"] is True
+    assert len(calls) == 1
+    assert calls[0][0] == [str(worker), "--doctor"]
+    assert "timeout" in calls[0][1] and calls[0][1]["timeout"] == 30
+
+
+def test_engine_doctor_timeout_is_actionable(monkeypatch, tmp_path):
+    worker = tmp_path / "DouyinF2Worker.exe"
+    worker.touch()
+    monkeypatch.setattr(downloader, "f2_worker_executable", lambda: worker)
+    monkeypatch.setattr(downloader, "downloader_status",
+                        lambda: SimpleNamespace(ready=False, origin="not installed",
+                                                version="", diagnostic="not found"))
+    def timed_out(*args, **kwargs):
+        raise downloader.subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+    monkeypatch.setattr(downloader.subprocess, "run", timed_out)
+    health = downloader.offline_downloader_health()
+    assert health["F2"]["ready"] is False
+    assert "TimeoutExpired" in health["F2"]["detail"]
