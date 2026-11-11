@@ -49,3 +49,26 @@ This page records what was reviewed and what the application actually executes. 
 Skills are development instructions, not packages to silently embed into
 the user's portable EXE. Record upstream licenses and verify each dependency
 before shipping.
+
+## November 2026 4.0 skill selection for desktop production
+
+The chosen skills are **developer guidance only**, NOT bundled dependencies in
+the user's Windows EXE. This distinction matters because many interface
+skills target browsers instead of native Qt.
+
+| Skill/repository | Why it helps | Explicit adoption |
+| --- | --- | --- |
+| [UI/UX Pro Max v2.15](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) (MIT) | Readable color/text contrast, focus, error feedback, information hierarchy | Apply to current native PySide6/QSS palette, page search and project controls; no React/npm bundle |
+| [Impeccable](https://github.com/pbakaus/impeccable) | `audit`, `harden`, `polish`, `adapt`, `onboard` review checklists | Use for empty states, missing files, cancellation confirmation, keyboard navigation; web live tooling not applicable to Qt |
+| [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (MIT) | Reproducible probe → edit → verify, deadlines and output quality contracts | Direct FFmpeg/FFprobe plus tests; no MCP service in app |
+| [video-editing-skill](https://github.com/kajisho5/video-editing-skill) (MIT) | Typed, verifiable edit operations, validated source-to-timeline mapping | `EditPreset`, per-source render jobs and 4.0 local project serialization; **not** a claim of multitrack timeline |
+| [NSIS](https://nsis.sourceforge.io/) | One-file Windows setup with explicit per-file uninstaller | Compile in CI, install/test/uninstall, preserve user-added files and local app data |
+| [F2](https://github.com/Johnserf-Seed/f2) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Public Douyin links, isolated worker and conditional extractor fallback | Keep existing worker. No browser cookie harvesting, CAPTCHA bypass, or unreviewed forks |
+
+**Why not add Fluent-Widgets or a new web UI?** PyQt-Fluent-Widgets
+licensing and additional weight need separate approval for a commercial
+affiliate app. Replacing the native editor with a browser/web runtime would
+increase EXE size and risk breaking Qt Multimedia, OCR and offline processing.
+
+Engineering acceptance is tracked in
+[PRODUCTION_READINESS_4_0.md](PRODUCTION_READINESS_4_0.md).
