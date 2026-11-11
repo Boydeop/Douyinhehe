@@ -176,24 +176,35 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          function Invoke-Checked([string]$File, [string[]]$ArgsList, [string]$Label, [int]$Seconds) {
+            Write-Host "START $Label"
+            $p = Start-Process -FilePath $File -ArgumentList $ArgsList -PassThru
+            if (-not $p.WaitForExit($Seconds * 1000)) {
+              try { $p.Kill($true) } catch {}
+              throw "Timeout: $Label after $Seconds seconds"
+            }
+            if ($p.ExitCode -ne 0) { throw "$Label failed: exit $($p.ExitCode)" }
+            Write-Host "PASS $Label"
+          }
           $installDir = Join-Path $env:RUNNER_TEMP 'DouyinheheFreshInstall'
           $setup = (Resolve-Path 'DouyinhehePro-Setup-x64.exe').Path
-          $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw "Setup exited $($process.ExitCode)" }
+          Invoke-Checked $setup @('/S', "/D=$installDir") 'NSIS setup' 360
           $installed = Join-Path $installDir 'DouyinhehePro.exe'
           if (-not (Test-Path $installed)) { throw 'Clean install missing EXE' }
           $env:QT_QPA_PLATFORM = 'offscreen'
           foreach ($flag in @('--self-test', '--ui-smoke-test', '--render-self-test')) {
-            $smoke = Start-Process -FilePath $installed -ArgumentList $flag -PassThru -Wait
-            if ($smoke.ExitCode -ne 0) { throw "Clean installed app $flag failed: exit $($smoke.ExitCode)" }
+            Invoke-Checked $installed @($flag) "Installed application $flag" 180
           }
           # A user-created file in the installation directory must survive
           # uninstall. Deletion may touch only package-owned manifest paths.
           $userCanary = Join-Path $installDir 'my-video-notes.txt'
           'KEEP THIS FILE' | Out-File -LiteralPath $userCanary -Encoding utf8
           $uninstall = Join-Path $installDir 'Uninstall.exe'
-          $process = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw "Uninstaller exited $($process.ExitCode)" }
+          Invoke-Checked $uninstall @('/S') 'NSIS uninstall' 360
+          # NSIS may finish its temp-helper process just after the launcher exits.
+          for ($i=0; $i -lt 30 -and (Test-Path $installed); $i++) {
+            Start-Sleep -Seconds 2
+          }
           if (-not (Test-Path $userCanary)) { throw 'Installer deleted a user-created file!' }
           if (Test-Path $installed) { throw 'Uninstall left the packaged app executable behind' }
       - name: ZIP portable release folder (streamed)
