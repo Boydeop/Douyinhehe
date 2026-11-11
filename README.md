@@ -1,6 +1,23 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.4.0 RC1 editor preview (bundled offline OCR and Qt Multimedia)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.5.0 RC1 integrated preview (F2 routing, video editor, offline OCR, Qt Multimedia)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+
+## Integrated 3.5 release candidate (November 2026)
+
+This branch combines the previously separate downloader PR #6 and playable
+editor PR #7. F2 is attempted for direct video and official share links,
+as well as channel profiles. yt-dlp is a conditional fallback only. Failed
+downloads are not counted as successful, and sanitized diagnostics are
+available in the download screen. Exports are staged and published without
+overwriting existing files. The desktop editor supports local playback,
+seeking, IN/OUT trim, OCR suggestions on selected frames, masks, 5-second
+render previews, and real FFmpeg output.
+
+**Acceptance gate:** CI on the integrated branch, Windows portable self-tests,
+and a manual Windows acceptance pass with authorized Douyin links and a
+representative licensed local MP4. Automated tests cannot guarantee live
+Douyin access or commercial distribution rights. See
+[the integration audit](docs/INTEGRATION_AUDIT_2026_11.md).
 
 ## Implemented
 
