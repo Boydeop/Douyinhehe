@@ -239,6 +239,18 @@ class MainWindow(QMainWindow):
         focus.activated.connect(self._focus_download_input)
         search = QShortcut(QKeySequence("Ctrl+K"), self)
         search.activated.connect(self._focus_page_search)
+        save_project = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_project.activated.connect(self._save_active_project)
+        open_project = QShortcut(QKeySequence("Ctrl+O"), self)
+        open_project.activated.connect(self._open_active_project)
+
+    def _save_active_project(self):
+        if self.nav.currentRow() == 2:
+            self.editor_workspace.save_project_file()
+
+    def _open_active_project(self):
+        if self.nav.currentRow() == 2:
+            self.editor_workspace.open_project_file()
 
     def _focus_page_search(self):
         self.find_page.setFocus()
