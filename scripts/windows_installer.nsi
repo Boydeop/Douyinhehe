@@ -6,7 +6,6 @@ OutFile "DouyinhehePro-Setup-x64.exe"
 InstallDir "$LOCALAPPDATA\Programs\DouyinhehePro"
 RequestExecutionLevel user
 SetCompressor zlib
-SetCompressorDictSize 8
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -41,5 +40,7 @@ Section "Uninstall"
   ; Only the application installation folder is removed. Database, saved
   ; projects, downloaded videos, account keys and caches in user_data_dir()
   ; are deliberately kept intact across upgrades and uninstall.
-  RMDir /r "$INSTDIR"
+  !include "scripts\\generated_uninstall.nsh"
+  Delete "$INSTDIR\\Uninstall.exe"
+  RMDir "$INSTDIR"
 SectionEnd
