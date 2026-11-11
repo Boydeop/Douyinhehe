@@ -1,6 +1,20 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.7.0 RC1 audited desktop experience (dual-theme Qt, per-clip edits, offline downloader diagnostics)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.8.0 RC1 production-hardening candidate (safe per-clip batch exports, privacy-hardened MP4 metadata, release inventory)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+
+## 3.8 production-hardening release candidate
+
+- **Per-clip batch rendering:** export-all now freezes the current inspector
+  and applies each clip's own saved edits (trim, masks, CTA, subtitle paths,
+  colors), not the selected clip's settings for every source.
+- **Privacy:** the exported MP4 metadata no longer leaks query strings,
+  Douyin share secrets or URL account credentials.
+- **Distribution QA:** every Windows portable ZIP contains a component
+  SHA-256 inventory and [production acceptance gate](docs/PRODUCTION_GATE_V3_8.md).
+- **Release policy:** green CI permits an engineering RC build only.
+  A stable public release requires manual Windows/Douyin/account tests
+  and third-party license compliance. Never describe the RC as fully
+  production-ready or a complete multitrack editor.
 
 ## 3.7 audit upgrade (November 2026)
 
