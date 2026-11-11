@@ -119,6 +119,11 @@ jobs:
           Remove-Item -LiteralPath $smokeMarker -ErrorAction SilentlyContinue
           & ./dist/DouyinhehePro/DouyinhehePro.exe --ui-smoke-test --ui-smoke-file $smokeMarker
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $smokeMarker)) {
+            $errorPath = "$smokeMarker.error.txt"
+            if (Test-Path -LiteralPath $errorPath) {
+              Write-Host 'Frozen GUI Python traceback:'
+              Get-Content -LiteralPath $errorPath
+            }
             throw 'Frozen GUI smoke failed or did not write success marker'
           }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
