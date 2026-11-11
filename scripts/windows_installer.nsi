@@ -26,7 +26,7 @@ Section "Douyinhehe Pro" SecMain
   CreateDirectory "$SMPROGRAMS\Douyinhehe Pro"
   CreateShortCut "$SMPROGRAMS\Douyinhehe Pro\Douyinhehe Studio.lnk" "$INSTDIR\DouyinhehePro.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinhehePro" "DisplayName" "Douyinhehe Pro Studio"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinhehePro" "DisplayVersion" "4.0.0-rc1"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinhehePro" "DisplayVersion" "4.0.0-rc2"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinhehePro" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinhehePro" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinhehePro" "NoModify" 1
@@ -40,7 +40,7 @@ Section "Uninstall"
   ; Only the application installation folder is removed. Database, saved
   ; projects, downloaded videos, account keys and caches in user_data_dir()
   ; are deliberately kept intact across upgrades and uninstall.
-  !include "${__FILEDIR__}\generated_uninstall.nsh"
+  !include "generated_uninstall.nsh"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 SectionEnd
