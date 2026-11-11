@@ -370,6 +370,11 @@ class MainWindow(QMainWindow):
         self.down_button.setMinimumHeight(45)
         self.down_button.clicked.connect(self.on_download)
         form.addWidget(self.down_button)
+        self.down_open_studio = QPushButton("▶  Mở video vừa tải trong Studio")
+        self.down_open_studio.setEnabled(False)
+        self.down_open_studio.setToolTip("Chuyển sang tab chỉnh sửa với các MP4 đã tải trong phiên này")
+        self.down_open_studio.clicked.connect(lambda: self.nav.setCurrentRow(2))
+        form.addWidget(self.down_open_studio)
         showlog = QPushButton("Xuất nhật ký chẩn đoán (đã che khóa API)")
         showlog.clicked.connect(self.on_export_logs)
         form.addWidget(showlog)
@@ -478,23 +483,26 @@ class MainWindow(QMainWindow):
         self.down_progress.setFormat("Đang tải...")
         def task(report):
             completed = 0
+            downloaded_files = []
             failed = []
             for index, grant in enumerate(grants, 1):
                 report(f"Nguồn {index}/{len(grants)}: {grant.original_url}")
                 try:
                     self.store.save_source(grant, niche)
-                    completed += len(download_authorized(
-                        grant.original_url, folder, grant, self.store, limit, report, mode=mode))
+                    files = download_authorized(
+                        grant.original_url, folder, grant, self.store, limit, report, mode=mode)
+                    downloaded_files.extend(files)
+                    completed += len(files)
                 except Exception as exc:
                     failed.append(f"{index}: {redact(str(exc))}")
                     report(f"Không thành công nguồn {index}: {redact(str(exc))}")
             if failed and completed == 0:
                 raise RuntimeError("Không tải được video. Chi tiết từ engine:\n" +
                                    "\n".join(failed[:4]))
-            return completed, failed
+            return completed, failed, downloaded_files
 
         def done(result):
-            completed, failed = result
+            completed, failed, downloaded_files = result
             self.down_button.setEnabled(True)
             self.down_progress.setRange(0, 100)
             self.down_progress.setValue(100 if not failed else 0)
@@ -502,6 +510,9 @@ class MainWindow(QMainWindow):
                                          f"{completed} video, {len(failed)} nguồn lỗi")
             self.refresh_sources()
             self.refresh_download_history()
+            if downloaded_files:
+                self.editor_workspace.import_files(downloaded_files)
+                self.down_open_studio.setEnabled(True)
             if failed:
                 QMessageBox.warning(self, "Một số nguồn chưa tải được",
                                     "\n".join(failed[:8]) + "\nBạn có thể thử từng URL video.")
