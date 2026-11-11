@@ -242,17 +242,21 @@ def render_video(source: Path, target: Path, preset: EditPreset,
         probe_video(staged)
         if staged.stat().st_size < 1024:
             raise RuntimeError("FFmpeg tạo file rỗng hoặc không hợp lệ.")
-        # Publish atomically without clobbering a concurrently created export.
-        # The staging directory is on the destination filesystem, so a hard link
-        # is an atomic, no-replace operation on supported local filesystems.
+        # On Windows os.rename does not overwrite an existing destination;
+        # unlike hard links it works on common exFAT removable drives.
+        # On POSIX use a hard link because rename would replace a concurrent
+        # export. The staging file lives on the destination filesystem.
         try:
-            os.link(staged, target)
+            if sys.platform == "win32":
+                os.rename(staged, target)
+            else:
+                os.link(staged, target)
         except FileExistsError as exc:
             raise FileExistsError(f"File xuất đã tồn tại: {target.name}") from exc
         except OSError as exc:
             raise OSError(
-                "Không thể lưu an toàn vào thư mục đích (cần hỗ trợ hard link "
-                "trên cùng ổ đĩa). Hãy chọn thư mục NTFS cục bộ."
+                "Không thể lưu video an toàn vào thư mục đích. Hãy kiểm tra "
+                "quyền ghi, dung lượng ổ đĩa và các file đang được sử dụng."
             ) from exc
     if progress:
         progress(f"Xuất thành công: {target.name}")
