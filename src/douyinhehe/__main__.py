@@ -6,6 +6,19 @@ import argparse
 import subprocess
 
 
+def _trace_ui_smoke(message: str) -> None:
+    """Opt-in CI breadcrumbs for frozen/windowed Qt startup diagnostics."""
+    import os
+    target = os.environ.get("DOUYINHEHE_UI_SMOKE_TRACE")
+    if target:
+        from pathlib import Path
+        try:
+            with Path(target).open("a", encoding="utf-8") as stream:
+                stream.write(message + "\n")
+        except OSError:
+            pass
+
+
 def self_test() -> int:
     """Verify frozen app imports, bundled tools, and a writable local Store."""
     from .core import Store, user_data_dir
@@ -91,12 +104,15 @@ def main() -> None:
         print(json.dumps(offline_ocr_smoke_test(), ensure_ascii=False))
         return
     if args.ui_smoke_test:
+        _trace_ui_smoke("ENTER UI smoke")
         import os
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication
         from .app import MainWindow
         app = QApplication.instance() or QApplication([])
+        _trace_ui_smoke("QApplication created")
         window = MainWindow()
+        _trace_ui_smoke("MainWindow created")
         if window.pages.count() != 9 or window.nav.count() != 9:
             raise RuntimeError("UI navigation missing feature pages")
         if window.down_mode.currentData() != "auto":
@@ -107,6 +123,7 @@ def main() -> None:
         if not window.down_button.isEnabled():
             raise RuntimeError("Download action is not available")
         editor = window.editor_workspace
+        _trace_ui_smoke("Editor resolved")
         if editor.clip_list.count() != 0:
             raise RuntimeError("Studio should start with empty media library")
         if editor.export_one_button.isEnabled():
@@ -128,6 +145,7 @@ def main() -> None:
             clips, selected = load_project(project)
             if len(clips) != 1 or selected != source or clips[0][1]["size"] != 0:
                 raise RuntimeError("Project save/load roundtrip failed")
+        _trace_ui_smoke("Project save/load passed")
         if editor.clip_list.objectName() != "clipLibrary":
             raise RuntimeError("Editor library is missing the 3.6 design contract")
         if not window.down_open_studio or window.down_open_studio.isEnabled():
@@ -153,10 +171,13 @@ def main() -> None:
         editor._restore_edit_state(state)
         if abs(editor.brightness.value() - .2) > .01:
             raise RuntimeError("Per-clip edit state cannot be restored")
+        _trace_ui_smoke("Themes/navigation/preset passed")
         window._focus_download_input()
         if window.nav.currentRow() != 1 or not window.download_urls.hasFocus():
             raise RuntimeError("Ctrl+L navigation target is not functional")
+        _trace_ui_smoke("Before window.close")
         window.close()
+        _trace_ui_smoke("After window.close; return")
         return
     if args.doctor:
         from .diagnostics import downloader_status
