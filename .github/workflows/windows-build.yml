@@ -10,6 +10,30 @@ concurrency:
 permissions:
   contents: write
 jobs:
+  ui-quick:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install basic Qt UI packages
+        shell: pwsh
+        run: |
+          python -m pip install -e '.[gui]'
+          if ($LASTEXITCODE -ne 0) { throw 'UI dependency install failed' }
+      - name: Run console GUI smoke with startup diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ux-preview | Out-Null
+          python -m douyinhehe --ui-smoke-test --ui-smoke-file ux-preview/smoke.ok
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path ux-preview/smoke.ok)) {
+            throw 'GUI startup failed; inspect Python traceback above'
+          }
   build:
     runs-on: windows-latest
     timeout-minutes: 65
@@ -91,10 +115,59 @@ jobs:
           & ./dist/DouyinhehePro/DouyinhehePro.exe --doctor
           if ($LASTEXITCODE -ne 0) { throw 'Packaged downloader diagnostics failed' }
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & ./dist/DouyinhehePro/DouyinhehePro.exe --ui-smoke-test
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI layout smoke test failed' }
+          $smokeMarker = Join-Path $env:RUNNER_TEMP 'douyinhehe-frozen-ui-smoke.ok'
+          Remove-Item -LiteralPath $smokeMarker -ErrorAction SilentlyContinue
+          & ./dist/DouyinhehePro/DouyinhehePro.exe --ui-smoke-test --ui-smoke-file $smokeMarker
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $smokeMarker)) {
+            $errorPath = "$smokeMarker.error.txt"
+            if (Test-Path -LiteralPath $errorPath) {
+              Write-Host 'Frozen GUI Python traceback:'
+              Get-Content -LiteralPath $errorPath
+            }
+            throw 'Frozen GUI smoke failed or did not write success marker'
+          }
           $file = Get-Item dist/DouyinhehePro/DouyinhehePro.exe
           Write-Host "EXE size bytes: $($file.Length)"
+      - name: Capture native Qt UX screenshots (offscreen)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:DOUYINHEHE_HOME = Join-Path $env:RUNNER_TEMP 'DouyinheheUXCapture'
+          $script = @'
+          from pathlib import Path
+          from PySide6.QtWidgets import QApplication
+          from douyinhehe.app import MainWindow
+          output = Path("ux-preview")
+          output.mkdir(exist_ok=True)
+          app = QApplication([])
+          window = MainWindow()
+          window.resize(1480, 920)
+          window.show()
+          app.processEvents()
+          if not window.grab().save(str(output / "01-download-dark.png"), "PNG"):
+              raise RuntimeError("Cannot capture downloader UX")
+          window.nav.setCurrentRow(2)
+          app.processEvents()
+          if not window.grab().save(str(output / "02-editor-dark.png"), "PNG"):
+              raise RuntimeError("Cannot capture editor UX")
+          if window.theme_mode != "light":
+              window.toggle_theme()
+          window.nav.setCurrentRow(1)
+          app.processEvents()
+          if not window.grab().save(str(output / "03-download-light.png"), "PNG"):
+              raise RuntimeError("Cannot capture light UI")
+          window.close()
+          '@
+          $script | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Native desktop UX screenshot check failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DouyinheheStudio-UX-Previews
+          path: ux-preview/*.png
+          retention-days: 14
+          if-no-files-found: error
+
       - name: ZIP portable release folder (streamed)
         shell: pwsh
         run: |

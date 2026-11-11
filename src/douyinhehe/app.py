@@ -7,15 +7,16 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QDateTime, Qt, Signal, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QDateTime, Qt, Signal, QUrl, QSettings
+from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateTimeEdit, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-    QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget, QStyle,
 )
 
+from .ui_theme import theme_stylesheet
 from .affiliate import Metrics
 from .batch import create_local_manifest, enqueue_manifest, run_queue
 from .delivery import DESTINATIONS, delivery_preflight
@@ -81,146 +82,212 @@ def group(name):
 
 
 class MainWindow(QMainWindow):
+    PAGE_INFO = (
+        ("Khám phá", "Từ khóa và đánh giá sản phẩm", "Chọn ngách và kiểm tra cơ hội nội dung"),
+        ("Tải Douyin", "Tải nguồn công khai", "Nhập liên kết, kiểm tra quyền và lưu video"),
+        ("Studio chỉnh sửa", "Studio biên tập", "Phát, cắt, che chữ và xuất MP4 thực tế"),
+        ("Phụ đề · Dịch", "Phụ đề & giọng nói", "Nhận dạng, dịch và lồng tiếng có kiểm soát"),
+        ("Affiliate", "Quản lý affiliate", "Liên kết sản phẩm, chiến dịch và chỉ số"),
+        ("Lên lịch", "Đăng & lên lịch", "Kết nối kênh và xác nhận thao tác đăng"),
+        ("Cài đặt", "Cấu hình", "Kiểm tra công cụ, tài khoản và quyền truy cập"),
+        ("Hàng đợi batch", "Hàng đợi công việc", "Dựng nhiều video và khôi phục tác vụ"),
+        ("Kiểm tra video", "Kiểm tra chất lượng", "Xác minh video trước khi phân phối"),
+    )
+
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Douyinhehe Studio 3.5 RC1 · Video Editor & Douyin")
-        self.setMinimumSize(1080, 700)
-        self.resize(1450, 900)
+        self.setWindowTitle("Douyinhehe Studio 3.6 RC1 · Local Video Workspace")
+        self.setMinimumSize(1050, 700)
+        self.resize(1480, 920)
+        self.settings = QSettings("Douyinhehe", "Studio")
+        self.theme_mode = str(self.settings.value("appearance", "dark"))
+        if self.theme_mode not in ("light", "dark"):
+            self.theme_mode = "dark"
         self.store = Store()
         self.pool = QThreadPool.globalInstance()
         self._workers = set()
         self._studio_frame = None
+
         root = QWidget()
+        root.setObjectName("workspaceRoot")
         outer = QHBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(228)
+        sidebar.setFixedWidth(244)
         navbox = QVBoxLayout(sidebar)
-        navbox.setContentsMargins(12, 20, 12, 15)
-        brand = QLabel("▶  DOUYINHEHE")
+        navbox.setContentsMargins(17, 24, 17, 17)
+        navbox.setSpacing(8)
+        brand = QLabel("◉  DOUYINHEHE")
         brand.setObjectName("brand")
         navbox.addWidget(brand)
-        navbox.addWidget(QLabel("AFFILIATE VIDEO STUDIO"))
+        subtitle = QLabel("CREATOR WORKSPACE   /   3.6")
+        subtitle.setObjectName("brandSub")
+        navbox.addWidget(subtitle)
+        navbox.addSpacing(25)
+        section = QLabel("KHÔNG GIAN LÀM VIỆC")
+        section.setObjectName("navSection")
+        navbox.addWidget(section)
         self.nav = QListWidget()
         self.nav.setObjectName("navigation")
-        self.nav.setSpacing(3)
+        self.nav.setSpacing(2)
+        self.nav.setAlternatingRowColors(False)
+        self.nav.setAccessibleName("Các khu vực làm việc Douyinhehe")
         navbox.addWidget(self.nav, 1)
-        navbox.addWidget(QLabel("Chỉ video có quyền sử dụng"))
+        foot = QLabel("●  Chế độ cục bộ\nVideo được xử lý trên máy của bạn")
+        foot.setObjectName("sidebarFoot")
+        foot.setWordWrap(True)
+        navbox.addWidget(foot)
         outer.addWidget(sidebar)
+
         workspace = QWidget()
+        workspace.setObjectName("workspaceRoot")
         body = QVBoxLayout(workspace)
-        body.setContentsMargins(20, 16, 20, 10)
-        heading = QLabel("Douyinhehe Workspace")
-        heading.setObjectName("heading")
+        body.setContentsMargins(24, 17, 24, 16)
+        body.setSpacing(8)
+
+        eyebrow = QLabel("DOUYINHEHE  /  WORKSPACE")
+        eyebrow.setObjectName("eyebrow")
+        body.addWidget(eyebrow)
         headline = QHBoxLayout()
-        headline.addWidget(heading)
-        headline.addStretch(1)
-        log_toggle = QPushButton("Nhật ký")
-        log_toggle.setToolTip("Hiện hoặc ẩn nhật ký kỹ thuật")
-        headline.addWidget(log_toggle)
+        headline.setSpacing(10)
+        self.heading = QLabel("Tải nguồn công khai")
+        self.heading.setObjectName("heading")
+        headline.addWidget(self.heading, 1)
+        to_editor = QPushButton("＋ Nhập clip")
+        to_editor.setObjectName("quietAction")
+        to_editor.setToolTip("Mở Studio để nhập video từ máy")
+        to_editor.clicked.connect(self.open_editor_import)
+        headline.addWidget(to_editor)
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName("quietAction")
+        self.theme_button.clicked.connect(self.toggle_theme)
+        headline.addWidget(self.theme_button)
+        self.log_toggle = QPushButton("Nhật ký")
+        self.log_toggle.setObjectName("quietAction")
+        self.log_toggle.setToolTip("Hiện hoặc ẩn thông báo kỹ thuật")
+        headline.addWidget(self.log_toggle)
         body.addLayout(headline)
-        intro = QLabel("Douyinhehe 3.5 RC1  |  Tải Douyin F2  |  Video editor  |  OCR offline")
-        intro.setObjectName("subheading")
-        body.addWidget(intro)
+
+        tools_row = QHBoxLayout()
+        tools_row.setSpacing(12)
+        self.page_description = QLabel("")
+        self.page_description.setObjectName("subheading")
+        self.page_description.setWordWrap(True)
+        tools_row.addWidget(self.page_description, 1)
+        self.find_page = QLineEdit()
+        self.find_page.setPlaceholderText("Tìm chức năng... (Ctrl+K)")
+        self.find_page.setAccessibleName("Tìm và mở chức năng bằng tên")
+        self.find_page.setClearButtonEnabled(True)
+        self.find_page.setMaximumWidth(270)
+        self.find_page.returnPressed.connect(self.open_search_result)
+        tools_row.addWidget(self.find_page)
+        body.addLayout(tools_row)
+
         self.pages = QStackedWidget()
         body.addWidget(self.pages, 1)
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
-        self.logs.setMaximumHeight(120)
-        self.logs.setVisible(False)
-        log_toggle.clicked.connect(lambda: self.logs.setVisible(not self.logs.isVisible()))
+        self.logs.setAccessibleName("Nhật ký hoạt động")
+        self.logs.setMaximumHeight(134)
+        self.logs.hide()
+        self.log_toggle.clicked.connect(self.toggle_logs)
         body.addWidget(self.logs)
+
+        footer = QHBoxLayout()
+        self.runtime_status = QLabel("Sẵn sàng · Không tự gọi API trả phí")
+        self.runtime_status.setObjectName("hintText")
+        footer.addWidget(self.runtime_status, 1)
+        self.engine_badge = QLabel("●  OFFLINE FIRST")
+        self.engine_badge.setObjectName("stateBadge")
+        footer.addWidget(self.engine_badge)
+        body.addLayout(footer)
         outer.addWidget(workspace, 1)
         self.setCentralWidget(root)
-        for title, builder in [
-            ("Khám phá", self.build_research),
-            ("Tải Douyin", self.build_download),
-            ("Studio chỉnh sửa", self.build_editor),
-            ("Phụ đề · Dịch", self.build_translation),
-            ("Affiliate", self.build_affiliate),
-            ("Lên lịch", self.build_publish),
-            ("Cài đặt", self.build_settings),
-            ("Hàng đợi batch", self.build_batch_queue),
-            ("Kiểm tra video", self.build_delivery_check),
-        ]:
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.setContentsMargins(8, 10, 10, 10)
+
+        builders = (
+            self.build_research, self.build_download, self.build_editor,
+            self.build_translation, self.build_affiliate, self.build_publish,
+            self.build_settings, self.build_batch_queue, self.build_delivery_check,
+        )
+        standard_icons = (
+            QStyle.StandardPixmap.SP_DirHomeIcon,
+            QStyle.StandardPixmap.SP_DialogOpenButton,
+            QStyle.StandardPixmap.SP_MediaPlay,
+            QStyle.StandardPixmap.SP_FileDialogDetailedView,
+            QStyle.StandardPixmap.SP_DriveHDIcon,
+            QStyle.StandardPixmap.SP_ComputerIcon,
+            QStyle.StandardPixmap.SP_FileDialogContentsView,
+            QStyle.StandardPixmap.SP_DialogSaveButton,
+            QStyle.StandardPixmap.SP_MessageBoxInformation,
+        )
+        for index, ((title, _, _), builder) in enumerate(zip(self.PAGE_INFO, builders)):
+            page = QWidget()
+            page.setObjectName("workspaceRoot")
+            layout = QVBoxLayout(page)
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(12)
             builder(layout)
-            if title == "Studio chỉnh sửa":
-                # A playable timeline must occupy the viewport, not sit inside a long form scroll.
-                self.pages.addWidget(widget)
+            if index == 2:
+                self.pages.addWidget(page)
             else:
-                layout.addStretch()
+                layout.addStretch(1)
                 scroll = QScrollArea()
                 scroll.setWidgetResizable(True)
-                scroll.setWidget(widget)
+                scroll.setWidget(page)
                 self.pages.addWidget(scroll)
             self.nav.addItem(title)
-        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+            self.nav.item(index).setIcon(self.style().standardIcon(standard_icons[index]))
+            self.nav.item(index).setToolTip(self.PAGE_INFO[index][2])
+        self.nav.currentRowChanged.connect(self._on_page_changed)
         self.nav.setCurrentRow(1)
-        self.setStyleSheet("""
-            QMainWindow, QWidget { background: #0f1117; color: #f4f6f9;
-                font-family: 'Segoe UI'; font-size: 14px; }
-            QFrame#sidebar, QListWidget#navigation { background: #171a22; border: none; }
-            QLabel#brand { font-size: 20px; font-weight: 800; color: #ff5a62; padding: 7px 0 17px 0; }
-            QLabel#heading { font-size: 24px; font-weight: 750; padding: 4px 0; }
-            QLabel#subheading, QLabel#hintText, QLabel#pageDescription {
-                color: #b5bbc8; font-size: 13px; padding: 3px 0; }
-            QLabel#pageTitle { font-size: 24px; font-weight: 750; padding: 4px 0; }
-            QListWidget#navigation::item { padding: 14px 13px; margin: 3px 0;
-                border-radius: 9px; color: #dde2e9; }
-            QListWidget#navigation::item:selected { background: #41262b;
-                color: #ffffff; border-left: 4px solid #fa5f66; }
-            QListWidget#navigation::item:hover { background: #292f3a; }
-            QGroupBox { border: 1px solid #383f4b; border-radius: 12px;
-                margin-top: 20px; padding: 17px 13px 13px 13px; font-weight: 650;
-                background: #1b2029; }
-            QGroupBox::title { subcontrol-origin: margin; left: 15px; top: 3px;
-                padding: 0 7px; color: #f2f5f8; }
-            QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
-            QDateTimeEdit {
-                background: #252b35; border: 1px solid #525b6b;
-                border-radius: 7px; padding: 9px; color: #f4f6f9;
-                selection-background-color: #8c363e; }
-            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
-            QSpinBox:focus, QDoubleSpinBox:focus, QDateTimeEdit:focus {
-                border: 2px solid #ff727b; }
-            QComboBox::drop-down { border: none; width: 28px; }
-            QPushButton { background: #303743; color: #f7f8fa;
-                border: 1px solid #515967; border-radius: 8px;
-                padding: 10px 14px; min-height: 26px; font-weight: 650; }
-            QPushButton:hover { background: #424a56; border-color: #747c8b; }
-            QPushButton:pressed { background: #6e303b; }
-            QPushButton:focus { border: 2px solid #ff8b95; }
-            QPushButton#primaryAction { background: #e34251; color: #ffffff;
-                border: 1px solid #ef6170; font-size: 14px; }
-            QPushButton#primaryAction:hover { background: #f05260; }
-            QPushButton:disabled { background: #2a2d34; color: #9a9faa; }
-            QCheckBox { padding: 9px 3px; spacing: 10px; }
-            QScrollArea { border: none; }
-            QScrollBar:vertical { background: #1b2029; width: 12px; }
-            QScrollBar::handle:vertical { background: #495361; border-radius: 6px; }
-            QProgressBar { border: 1px solid #505968; border-radius: 7px;
-                background: #292f39; text-align: center; min-height: 27px; }
-            QProgressBar::chunk { background: #ea4d5e; border-radius: 6px; }
-            QSlider::groove:horizontal { height: 7px; background: #4a515b; border-radius: 3px; }
-            QSlider::handle:horizontal { background: #ff6774; width: 16px; margin: -5px 0; border-radius: 7px; }
-            QToolTip { background: #272d38; color: white; border: 1px solid #6d7887; }
-            QTabWidget::pane { border: 1px solid #3b4351; border-radius: 8px; background: #1c222c; }
-            QTabBar::tab { background: #242b37; color: #d7deea; border-radius: 7px;
-                padding: 11px 14px; margin: 3px; }
-            QTabBar::tab:selected { background: #443039; color: white;
-                border-bottom: 2px solid #ff6474; }
-            QSplitter::handle { background: #3b4351; width: 6px; }
-            QListWidget { background: #1d232e; border: 1px solid #404958;
-                border-radius: 8px; padding: 4px; }
-            QListWidget::item { padding: 8px; border-radius: 5px; }
-            QListWidget::item:selected { background: #33495e; color: #ffffff; }
-        """)
-        self.log("Khởi động thành công. Chưa có API hay quyền đăng nào được kích hoạt mặc định.")
+        self._apply_theme()
+        self.search_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        self.search_shortcut.activated.connect(self.focus_search)
+        self.log("Khởi động thành công. Không có API trả phí nào được gọi tự động.")
+
+    def _on_page_changed(self, index):
+        if not 0 <= index < len(self.PAGE_INFO):
+            return
+        self.pages.setCurrentIndex(index)
+        self.heading.setText(self.PAGE_INFO[index][1])
+        self.page_description.setText(self.PAGE_INFO[index][2])
+        self.runtime_status.setText("Sẵn sàng · " + self.PAGE_INFO[index][0])
+
+    def focus_search(self):
+        self.find_page.setFocus()
+        self.find_page.selectAll()
+
+    def open_search_result(self):
+        query = " ".join(self.find_page.text().lower().split())
+        if not query:
+            return
+        for index, (name, heading, description) in enumerate(self.PAGE_INFO):
+            if query in " ".join((name, heading, description)).lower():
+                self.nav.setCurrentRow(index)
+                self.find_page.clear()
+                return
+        self.runtime_status.setText("Không tìm thấy chức năng: " + query[:45])
+        self.find_page.selectAll()
+
+    def open_editor_import(self):
+        self.nav.setCurrentRow(2)
+        self.editor_workspace.choose_files()
+
+    def _apply_theme(self):
+        self.setStyleSheet(theme_stylesheet(self.theme_mode))
+        self.theme_button.setText("☀ Sáng" if self.theme_mode == "dark" else "◐ Tối")
+        self.theme_button.setAccessibleName("Đổi giao diện sáng/tối")
+
+    def toggle_theme(self):
+        self.theme_mode = "light" if self.theme_mode == "dark" else "dark"
+        self.settings.setValue("appearance", self.theme_mode)
+        self._apply_theme()
+
+    def toggle_logs(self):
+        self.logs.setVisible(not self.logs.isVisible())
+        self.log_toggle.setText("Ẩn nhật ký" if self.logs.isVisible() else "Nhật ký")
 
     def log(self, msg):
         line = redact(str(msg))[:1500]
@@ -332,6 +399,16 @@ class MainWindow(QMainWindow):
         self.download_urls.setMinimumHeight(145)
         src.addWidget(QLabel("Liên kết video hoặc kênh"))
         src.addWidget(self.download_urls)
+        quick_links = QHBoxLayout()
+        paste_link = QPushButton("Dán liên kết")
+        paste_link.setToolTip("Dán link hoặc nội dung chia sẻ từ clipboard")
+        paste_link.clicked.connect(self.paste_download_links)
+        quick_links.addWidget(paste_link)
+        clear_links = QPushButton("Xóa liên kết")
+        clear_links.clicked.connect(self.download_urls.clear)
+        quick_links.addWidget(clear_links)
+        quick_links.addStretch(1)
+        src.addLayout(quick_links)
         self.down_selected_btn = QPushButton("Chỉ lấy video đang mở từ link kênh (?vid)")
         self.down_selected_btn.setToolTip("Dùng video được chọn trong link hồ sơ, không tải cả kênh.")
         self.down_selected_btn.clicked.connect(self.on_download_selected_video)
@@ -360,6 +437,13 @@ class MainWindow(QMainWindow):
         rights_help.setWordWrap(True)
         rights_help.setObjectName("hintText")
         rights_layout.addWidget(rights_help)
+        public_note = QLabel(
+            "Chế độ mặc định không yêu cầu nhập cookie. Chỉ tải nội dung công khai "
+            "khi Douyin cho phép truy cập; ứng dụng sẽ không vượt xác minh hoặc CAPTCHA."
+        )
+        public_note.setObjectName("hintText")
+        public_note.setWordWrap(True)
+        rights_layout.addWidget(public_note)
         src.addWidget(rights)
         columns.addWidget(sources, 3)
 
@@ -372,6 +456,10 @@ class MainWindow(QMainWindow):
         browse = QPushButton("Chọn thư mục")
         browse.clicked.connect(lambda: self._folder(self.down_folder))
         form.addWidget(browse)
+        open_downloads = QPushButton("Mở thư mục video")
+        open_downloads.setToolTip("Mở thư mục đầu ra bằng Windows Explorer")
+        open_downloads.clicked.connect(self.open_download_folder)
+        form.addWidget(open_downloads)
         form.addWidget(QLabel("Số video tối đa"))
         self.down_limit = QSpinBox()
         self.down_limit.setRange(0, 5000)
@@ -415,6 +503,25 @@ class MainWindow(QMainWindow):
         self.down_mode.currentIndexChanged.connect(self.on_down_urls_change)
         self.on_down_urls_change()
         self.refresh_download_history()
+
+    def paste_download_links(self):
+        """Explicit clipboard action; no cookie reading or network request."""
+        raw = QApplication.clipboard().text().strip()
+        if not raw:
+            self.down_detect.setText("Clipboard đang trống. Hãy sao chép một liên kết Douyin.")
+            return
+        existing = self.download_urls.toPlainText().strip()
+        self.download_urls.setPlainText((existing + "\n" + raw).strip() if existing else raw)
+
+    def open_download_folder(self):
+        """Open a local folder only, never interpret output paths as URLs."""
+        try:
+            folder = Path(self.down_folder.text()).expanduser().resolve()
+            folder.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
+                raise RuntimeError("Windows không mở được thư mục đã chọn.")
+        except (ValueError, PermissionError, RuntimeError, OSError) as exc:
+            self.alert(exc)
 
     def refresh_download_history(self):
         rows = [row for row in self.store.sources() if row.get("file_path")]
@@ -868,6 +975,19 @@ class MainWindow(QMainWindow):
             self.store.scrub_private_metadata()
             self.log("Đã xóa metadata riêng tư cũ khỏi SQLite.")
             self.refresh_sources()
+
+    def on_ocr_check(self):
+        """Check packaged OCR offline, without blocking the GUI or downloading models."""
+        from .ocr_support import offline_ocr_smoke_test
+
+        def done(result):
+            count = result.get("recognized_lines", 0)
+            models = result.get("models", 0)
+            message = f"OCR offline hoạt động: {models} model, nhận dạng {count} dòng thử."
+            self.log(message)
+            QMessageBox.information(self, "Kiểm tra OCR offline", message)
+
+        self.job("Kiểm tra OCR offline", lambda progress: offline_ocr_smoke_test(), done)
 
     def on_downloader_check(self):
         status = downloader_status()
