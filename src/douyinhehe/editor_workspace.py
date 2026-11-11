@@ -27,6 +27,7 @@ except ImportError:
     MULTIMEDIA_AVAILABLE = False
 
 from .core import user_data_dir
+from .project_io import save_project, load_project, EXTENSION
 from .editor_ops import (clip_duration, safe_output_path, preview_preset,
                          preset_from_editor_state, seconds_label)
 from .logging_support import redact
@@ -90,6 +91,18 @@ class EditorWorkspace(QWidget):
         self.export_one_button.setToolTip("Xuất clip mới; không thay đổi bản gốc")
         header.addWidget(self.export_one_button)
         main.addLayout(header)
+
+        project_actions = QHBoxLayout()
+        self.open_project_button = QPushButton("Mở dự án .dhyproj")
+        self.open_project_button.setToolTip("Khôi phục danh sách video và thiết lập chỉnh sửa từng clip")
+        self.open_project_button.clicked.connect(self.open_project_file)
+        project_actions.addWidget(self.open_project_button)
+        self.save_project_button = QPushButton("Lưu dự án")
+        self.save_project_button.setToolTip("Tạo bản sao lưu .bak trước khi cập nhật dự án")
+        self.save_project_button.clicked.connect(self.save_project_file)
+        project_actions.addWidget(self.save_project_button)
+        project_actions.addStretch()
+        main.addLayout(project_actions)
 
         hint = QLabel("01  Nhập clip     →     02  Xem và chọn điểm cắt     →     03  Chỉnh màu / che chữ     →     04  Xem thử và xuất")
         hint.setObjectName("hintText")
@@ -334,6 +347,88 @@ class EditorWorkspace(QWidget):
         form.addStretch(1)
         self.inspector.addTab(tab, "Xuất MP4")
 
+    def save_project_file(self):
+        if self._busy:
+            return self._error("Hãy hoàn thành render trước khi lưu dự án.")
+        if not self.sources:
+            return self._error("Chưa có clip nào để lưu.")
+        project_dir = user_data_dir() / "projects"
+        try:
+            project_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return self._error(str(exc))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Lưu dự án Douyinhehe",
+            str(project_dir / "MyStudio.dhyproj"),
+            "Douyinhehe Project (*.dhyproj)")
+        if not path:
+            return
+        try:
+            states = dict(self._clip_states)
+            if self.source is not None:
+                states[self.source] = self._capture_edit_state()
+            items = [(source, states.get(source, self._default_edit_state))
+                     for source in self.sources]
+            result = save_project(Path(path), items, self.source)
+            self._clip_states = states
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return self._error(str(exc))
+        self.status_label.setText(f"Đã lưu {len(items)} clip: {result}")
+
+    def _expand_project_state(self, state: dict) -> dict:
+        """Bridge the portable project schema to the 3.8 Qt inspector snapshot."""
+        result = dict(state)
+        size_index = result["size"]
+        if size_index < 0 or size_index >= self.size.count():
+            raise ValueError("Định dạng video trong dự án không được hỗ trợ.")
+        result["output_size"] = tuple(self.size.itemData(size_index))
+        result["fit_mode"] = ("crop", "pad", "blur")[result["fit"]]
+        result["mask_mode"] = ("blur", "solid")[result["mask_type"]]
+        return result
+
+    def open_project_file(self):
+        if self._busy:
+            return self._error("Hãy hoàn thành render trước khi mở dự án.")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Mở dự án Douyinhehe",
+            str(user_data_dir() / "projects"),
+            "Douyinhehe Project (*.dhyproj)")
+        if not path:
+            return
+        try:
+            entries, selected = load_project(Path(path))
+            missing = [p.name for p, _ in entries if not p.is_file()]
+            present = [(p, self._expand_project_state(state))
+                       for p, state in entries if p.is_file()]
+            if not present:
+                raise ValueError("Không tìm thấy video nguồn của dự án. Hãy khôi phục file video.")
+        except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
+            return self._error(str(exc))
+        if self.sources:
+            answer = QMessageBox.question(
+                self, "Thay danh sách clip hiện tại?",
+                "Dự án mới sẽ thay thế danh sách hiện tại. Hãy lưu dự án cũ trước nếu cần.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.clear_clips()
+        self._clip_states = {p: state for p, state in present}
+        self.import_files([p for p, _ in present])
+        if selected is not None:
+            for i in range(self.clip_list.count()):
+                item = self.clip_list.item(i)
+                if Path(item.data(Qt.ItemDataRole.UserRole)) == selected:
+                    self.clip_list.setCurrentRow(i)
+                    break
+        self.status_label.setText(
+            f"Đã mở {len(present)} clip." +
+            (f" Thiếu {len(missing)} file nguồn." if missing else "")
+        )
+        if missing:
+            QMessageBox.warning(self, "Thiếu video nguồn",
+                                "Hãy khôi phục các file gốc:\n" + "\n".join(missing[:10]))
+
     def choose_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Chọn video để biên tập", "", "Video (*.mp4 *.mov *.mkv *.webm *.m4v)"
@@ -465,6 +560,8 @@ class EditorWorkspace(QWidget):
             button.setEnabled(available and not self._busy)
         self.export_all_button.setEnabled(bool(self.sources) and not self._busy)
         self.add_button.setEnabled(not self._busy)
+        self.save_project_button.setEnabled(bool(self.sources) and not self._busy)
+        self.open_project_button.setEnabled(not self._busy)
         self.remove_button.setEnabled(self.clip_list.currentRow() >= 0 and not self._busy)
         self.clear_button.setEnabled(bool(self.sources) and not self._busy)
         self.clip_count_label.setText(f"{len(self.sources)} clip")

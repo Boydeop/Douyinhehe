@@ -1,6 +1,26 @@
 # Douyinhehe Pro · Affiliate Video Studio
 
-Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 3.8.0 RC1 production-hardening candidate (safe per-clip batch exports, privacy-hardened MP4 metadata, release inventory)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+Windows desktop studio for **licensed Douyin videos**, Vietnamese subtitle translation and affiliate multi-channel publishing. **Current status: 4.0.0 RC2 integrated engineering candidate (local project files, verified portable + Windows installer, batch-safe editor, offline OCR)**. No claims of guaranteed views, copyright immunity, or unrestricted automatic posting. Interface is Vietnamese.
+
+## 4.0 integrated desktop release candidate
+
+- **Save/Open Studio project**: an offline, versioned `.dhyproj` file records
+  each clip's edit settings and paths without embedding copyrighted media or
+  API keys. Existing files get a `.dhyproj.bak` recovery copy. Use **Ctrl+S**
+  and **Ctrl+O** while inside Studio.
+- **Two Windows delivery choices**: a single `DouyinhehePro-Setup-x64.exe`
+  installer (installation uses the complete onedir runtime), plus the original
+  portable ZIP. The uninstaller preserves user-added files and app data.
+- **Retains 3.8 protections**: independent per-clip batch presets, stripped
+  Douyin session query strings in MP4 metadata, F2/yt-dlp offline diagnostics,
+  a component SHA-256 inventory and FFmpeg/Qt/OCR smoke tests.
+- **Release validation**: Windows CI must compile the NSIS setup, install it
+  on a clean runner, run packaged UI/render self-tests, uninstall without
+  deleting a user-created canary file, and publish checksums for both assets.
+- **Scope honesty**: this remains a release candidate, not a signed,
+  license-cleared production release, multitrack CapCut replacement, or a
+  guaranteed cookie-free Douyin downloader. See
+  [4.0 production readiness](docs/PRODUCTION_READINESS_4_0.md).
 
 ## 3.8 production-hardening release candidate
 

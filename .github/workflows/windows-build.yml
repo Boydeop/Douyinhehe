@@ -134,7 +134,7 @@ jobs:
                   packages[name] = "not in parent build environment"
           manifest = {
               "application": "DouyinhehePro",
-              "version": "3.8.0rc1",
+              "version": "4.0.0rc2",
               "git_commit": os.environ.get("GITHUB_SHA", ""),
               "build_utc": datetime.now(timezone.utc).isoformat(),
               "platform": "Windows x64 portable onedir",
@@ -148,8 +148,65 @@ jobs:
           '@
           $source | python -
           if ($LASTEXITCODE -ne 0) { throw 'Build manifest generation failed' }
-          Copy-Item docs/PRODUCTION_GATE_V3_8.md dist/DouyinhehePro/PRODUCTION_GATE.md
+          Copy-Item docs/PRODUCTION_READINESS_4_0.md dist/DouyinhehePro/PRODUCTION_READINESS.md
 
+      - name: Build one-file Windows Setup EXE (NSIS)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install nsis.install --version=3.12.0 --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installer compiler installation failed' }
+          python scripts/generate_uninstall_manifest.py dist/DouyinhehePro scripts/generated_uninstall.nsh
+          if ($LASTEXITCODE -ne 0) { throw 'Uninstall manifest generation failed' }
+          $candidates = @(
+            'C:\Program Files (x86)\NSIS\makensis.exe',
+            'C:\Program Files\NSIS\makensis.exe'
+          )
+          $compiler = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) { throw 'NSIS makensis.exe unavailable' }
+          & $compiler /V2 scripts/windows_installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          # NSIS may emit OutFile relative to the script directory.
+          if ((Test-Path scripts/DouyinhehePro-Setup-x64.exe) -and
+              -not (Test-Path DouyinhehePro-Setup-x64.exe)) {
+            Move-Item scripts/DouyinhehePro-Setup-x64.exe DouyinhehePro-Setup-x64.exe
+          }
+          if (-not (Test-Path DouyinhehePro-Setup-x64.exe)) { throw 'Setup EXE not created' }
+      - name: Clean Windows installer smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-Checked([string]$File, [string[]]$ArgsList, [string]$Label, [int]$Seconds) {
+            Write-Host "START $Label"
+            $p = Start-Process -FilePath $File -ArgumentList $ArgsList -PassThru
+            if (-not $p.WaitForExit($Seconds * 1000)) {
+              try { $p.Kill($true) } catch {}
+              throw "Timeout: $Label after $Seconds seconds"
+            }
+            if ($p.ExitCode -ne 0) { throw "$Label failed: exit $($p.ExitCode)" }
+            Write-Host "PASS $Label"
+          }
+          $installDir = Join-Path $env:RUNNER_TEMP 'DouyinheheFreshInstall'
+          $setup = (Resolve-Path 'DouyinhehePro-Setup-x64.exe').Path
+          Invoke-Checked $setup @('/S', "/D=$installDir") 'NSIS setup' 360
+          $installed = Join-Path $installDir 'DouyinhehePro.exe'
+          if (-not (Test-Path $installed)) { throw 'Clean install missing EXE' }
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          foreach ($flag in @('--self-test', '--ui-smoke-test', '--render-self-test')) {
+            Invoke-Checked $installed @($flag) "Installed application $flag" 180
+          }
+          # A user-created file in the installation directory must survive
+          # uninstall. Deletion may touch only package-owned manifest paths.
+          $userCanary = Join-Path $installDir 'my-video-notes.txt'
+          'KEEP THIS FILE' | Out-File -LiteralPath $userCanary -Encoding utf8
+          $uninstall = Join-Path $installDir 'Uninstall.exe'
+          Invoke-Checked $uninstall @('/S') 'NSIS uninstall' 360
+          # NSIS may finish its temp-helper process just after the launcher exits.
+          for ($i=0; $i -lt 30 -and (Test-Path $installed); $i++) {
+            Start-Sleep -Seconds 2
+          }
+          if (-not (Test-Path $userCanary)) { throw 'Installer deleted a user-created file!' }
+          if (Test-Path $installed) { throw 'Uninstall left the packaged app executable behind' }
       - name: ZIP portable release folder (streamed)
         shell: pwsh
         run: |
@@ -171,13 +228,16 @@ jobs:
         shell: pwsh
         run: |
           $hash = (Get-FileHash -Algorithm SHA256 -Path DouyinhehePro-Windows-x64.zip).Hash.ToLowerInvariant()
-          "$hash  DouyinhehePro-Windows-x64.zip" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          $setupHash = (Get-FileHash -Algorithm SHA256 -Path DouyinhehePro-Setup-x64.exe).Hash.ToLowerInvariant()
+          @("$hash  DouyinhehePro-Windows-x64.zip", "$setupHash  DouyinhehePro-Setup-x64.exe") |
+            Out-File -FilePath SHA256SUMS.txt -Encoding ascii
           Get-Content SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: DouyinhehePro-Windows-x64
           path: |
             DouyinhehePro-Windows-x64.zip
+            DouyinhehePro-Setup-x64.exe
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -190,7 +250,7 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}" -replace '^release/', ''
           if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release tag: $tag" }
-          gh release create $tag DouyinhehePro-Windows-x64.zip SHA256SUMS.txt `
+          gh release create $tag DouyinhehePro-Windows-x64.zip DouyinhehePro-Setup-x64.exe SHA256SUMS.txt `
             --target "${{ github.sha }}" --title "Douyinhehe Pro $tag · Windows x64" `
             --notes-file docs/RELEASE_NOTES.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release upload failed' }
