@@ -117,6 +117,7 @@ def _verify_downloaded_media(files: list[Path], folder: Path) -> list[Path]:
 
     root = Path(folder).resolve()
     result: list[Path] = []
+    seen: set[Path] = set()
     for candidate in files:
         try:
             path = Path(candidate).resolve()
@@ -127,7 +128,8 @@ def _verify_downloaded_media(files: list[Path], folder: Path) -> list[Path]:
             probe_video(path)
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
             continue
-        if path not in result:
+        if path not in seen:
+            seen.add(path)
             result.append(path)
     return result
 
