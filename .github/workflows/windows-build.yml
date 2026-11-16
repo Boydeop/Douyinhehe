@@ -134,7 +134,7 @@ jobs:
                   packages[name] = "not in parent build environment"
           manifest = {
               "application": "DouyinhehePro",
-              "version": "3.8.0rc1",
+              "version": "3.8.1rc1",
               "git_commit": os.environ.get("GITHUB_SHA", ""),
               "build_utc": datetime.now(timezone.utc).isoformat(),
               "platform": "Windows x64 portable onedir",

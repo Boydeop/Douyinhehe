@@ -1,3 +1,15 @@
+# Douyinhehe Studio 3.8.1 RC1 — reliability audit
+
+- Preserve license expiry in imported and queued batch manifests, and recheck it immediately before rendering. Private permission materials remain excluded from persisted jobs.
+- Prevent video truncation when narration or the source audio is shorter than the picture using FFmpeg audio padding.
+- Reject corrupted/non-video, empty and out-of-directory files from F2 and yt-dlp download success results.
+- Remove sensitive URL query credentials from provenance sidecar exports.
+- Keep long-running desktop log widgets memory-bounded at 1,000 entries.
+- Add regression tests for those failure modes and the offline download validation.
+- Windows EXE is provided via GitHub Actions on green CI; real-world Douyin availability, commercial licensing, and user-account publishing are not certified.
+
+Read docs/AUDIT_FULL_2026_11_16.md for evidence, remaining risks and future optimizations.
+
 # Douyinhehe Studio 3.8 RC1 — production hardening
 
 Changes:

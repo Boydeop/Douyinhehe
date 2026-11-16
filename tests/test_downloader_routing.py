@@ -60,6 +60,7 @@ def test_f2_worker_outputs_are_discovered(tmp_path, monkeypatch):
         (subfolder / "clip.mp4").write_bytes(b"new video fixture" * 80)
         return SimpleNamespace(returncode=0, stdout="done", stderr="")
     monkeypatch.setattr(downloader.subprocess, "run", run)
+    monkeypatch.setattr(downloader, "_verify_downloaded_media", lambda files, folder: files)
     output = downloader._download_channel_f2(PROFILE, root, 17, None)
     assert len(output) == 1
     assert output[0].name == "clip.mp4"

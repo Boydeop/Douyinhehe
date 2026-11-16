@@ -17,7 +17,7 @@ from typing import Callable
 
 from .core import LicenseGrant, Store, file_sha256, now_utc
 from .downloader import parse_douyin_urls
-from .media import EditPreset, probe_video, render_video
+from .media import EditPreset, probe_video, render_video, safe_source_metadata
 from .editor_ops import safe_output_path
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm"}
@@ -69,7 +69,7 @@ class BatchItem:
         result = asdict(self)
         for key in ("file", "subtitle"):
             result[key] = str(result[key]) if result[key] is not None else None
-        for key in ("creator", "evidence", "expires_on", "evidence_file", "evidence_sha256"):
+        for key in ("creator", "evidence", "evidence_file", "evidence_sha256"):
             result.pop(key, None)
         result["creator"] = ""
         result["evidence"] = ""
@@ -142,7 +142,7 @@ def read_manifest(path: Path, *, limit: int = 500) -> list[BatchItem]:
                 brightness=float(row.get("brightness") or 0),
                 contrast=float(row.get("contrast") or 1),
                 saturation=float(row.get("saturation") or 1),
-                expires_on="", evidence_file=None, evidence_sha256="",
+                expires_on=str(row.get("expires_on") or "").strip(), evidence_file=None, evidence_sha256="",
                 masks=(json.dumps(row["masks"]) if isinstance(row.get("masks"), list)
                        else str(row.get("masks") or "")),
                 trim_start=float(row.get("trim_start") or 0),
@@ -200,7 +200,7 @@ def run_queue(store: Store, outdir: Path, progress: Callable[[str], None] | None
             meta = probe_video(dest)
             sidecar = {
                 "schema": "douyinhehe.provenance.v2", "created_at": now_utc(),
-                "source_url": item.original_url, "commercial": item.commercial,
+                "source_url": safe_source_metadata(item.original_url), "commercial": item.commercial,
                 "derivative": item.derivative, "platforms": item.platforms,
                 "niche": item.niche, "source_sha256": source_hash,
                 "output_sha256": _sha256(dest),
@@ -232,13 +232,13 @@ def create_local_manifest(folder: Path, manifest: Path, *, creator: str = "", ev
     if not 1 <= len(files) <= 500:
         raise ValueError("Chỉ hỗ trợ từ 1 đến 500 video hợp lệ mỗi lần nhập.")
     rows = [{"file": str(path), "original_url": "local://" + _sha256(path),
-             "commercial": True, "derivative": True} for path in files]
+             "commercial": True, "derivative": True, "expires_on": expires_on} for path in files]
     dest = Path(manifest).resolve()
     if dest.suffix.lower() != ".json":
         raise ValueError("Manifest xuất cần đuôi .json.")
     # Only write after every grant passes validation.
     for row in rows:
-        LicenseGrant(row["original_url"], "", "", True, True).validate()
+        LicenseGrant(row["original_url"], "", "", True, True, expires_on=expires_on).validate()
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(".tmp")
     part.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")

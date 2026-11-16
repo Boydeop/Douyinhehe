@@ -152,6 +152,8 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         body.addWidget(self.pages, 1)
         self.logs = QPlainTextEdit()
+        # Bound UI document memory during multi-hour batch downloads.
+        self.logs.document().setMaximumBlockCount(1000)
         self.logs.setReadOnly(True)
         self.logs.setMaximumHeight(120)
         self.logs.setVisible(False)
