@@ -70,8 +70,9 @@ class EditPreset:
     trim_end: float | None = None
 
     def validate(self) -> None:
-        if self.width < 256 or self.height < 256 or self.width % 2 or self.height % 2:
-            raise ValueError("Kích thước video phải là số chẵn và từ 256px.")
+        if (self.width < 256 or self.height < 256 or self.width % 2 or self.height % 2
+                or self.width * self.height > 3840 * 2160):
+            raise ValueError("Kích thước video phải là số chẵn, từ 256px và không vượt quá 4K UHD.")
         if self.fit not in {"crop", "pad", "blur"}:
             raise ValueError("Kiểu căn khung không hợp lệ.")
         if not -0.5 <= self.brightness <= 0.5 or not 0.5 <= self.contrast <= 2.0:
@@ -213,7 +214,8 @@ def build_edit_command(source: Path, output: Path, overlay: Path, preset: EditPr
         cmd += ["-t", str(preset.trim_end - preset.trim_start)]
     cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p",
             "-r", "30", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-movflags", "+faststart",
-            "-shortest", "-metadata", f"comment=Source: {safe_source_metadata(preset.original_url)}",
+            # Pad short audio (narration or source track) so -shortest follows video duration.
+             "-af", "apad", "-shortest", "-metadata", f"comment=Source: {safe_source_metadata(preset.original_url)}",
             str(output)]
     return cmd
 
