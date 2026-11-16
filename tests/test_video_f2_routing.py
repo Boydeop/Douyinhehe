@@ -74,8 +74,10 @@ def test_f2_unsupported_url_tries_ytdlp(tmp_path, monkeypatch):
     monkeypatch.setattr(downloader, "_download_video_f2", unsupported)
     monkeypatch.setattr(downloader, "downloader_status",
                         lambda: SimpleNamespace(ready=True, executable="yt-dlp.exe"))
-    media = tmp_path / "clip.mp4"
-    media.write_bytes(b"sample")
+    media = tmp_path / "media" / "clip.mp4"
+    media.parent.mkdir()
+    media.write_bytes(b"sample" * 300)
+    monkeypatch.setattr(downloader, "_verify_downloaded_media", lambda files, folder: files)
     calls = []
     def run(cmd, **kwargs):
         calls.append(cmd)
