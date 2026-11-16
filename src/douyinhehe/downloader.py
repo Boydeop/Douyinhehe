@@ -107,6 +107,31 @@ def offline_downloader_health() -> dict[str, dict[str, object]]:
     return report
 
 
+def _verify_downloaded_media(files: list[Path], folder: Path) -> list[Path]:
+    """Accept only real playable video files inside the selected download directory.
+
+    Exit code 0 or an .mp4 filename is not proof of a successful download.
+    The check also rejects arbitrary paths emitted by a malformed third-party worker.
+    """
+    from .media import probe_video
+
+    root = Path(folder).resolve()
+    result: list[Path] = []
+    for candidate in files:
+        try:
+            path = Path(candidate).resolve()
+            if (not path.is_relative_to(root) or path.suffix.lower() not in
+                    {".mp4", ".mov", ".mkv", ".webm"} or
+                    path.stat().st_size < 1024):
+                continue
+            probe_video(path)
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+            continue
+        if path not in result:
+            result.append(path)
+    return result
+
+
 def _download_f2(url: str, folder: Path, max_items: int,
                  progress: Callable[[str], None] | None, *, mode: str) -> list[Path]:
     """Run the isolated F2 worker in one/post mode and verify actual media output."""
@@ -148,6 +173,7 @@ def _download_f2(url: str, folder: Path, max_items: int,
     # Do not report empty/partial files as successful downloads.
     files = sorted(p for p in after if after[p][0] >= 1024 and
                    (p not in previous or previous[p] != after[p]))
+    files = _verify_downloaded_media(files, root)
     if not files:
         raise RuntimeError(
             f"F2 ({mode}) kết thúc nhưng không ghi video MP4 mới. "
@@ -276,9 +302,10 @@ def download_authorized(url: str, folder: Path, grant: LicenseGrant, store: Stor
         detail = redact(str(exc))[-700:]
         raise RuntimeError(f"yt-dlp: {diagnose_failure(detail)}. "
                            f"Chi tiết: {detail}") from exc
+    outputs = _verify_downloaded_media(outputs, folder)
     if not outputs:
         raise RuntimeError(
-            "yt-dlp kết thúc nhưng không tạo video mới. Nguồn có thể đã tải trước "
+            "yt-dlp kết thúc nhưng không tạo video mới hoặc tệp video hợp lệ. Nguồn có thể đã tải trước "
             "(download archive), đã hết hạn hoặc bị Douyin từ chối. "
             "Không đánh dấu tác vụ là tải thành công."
         )
