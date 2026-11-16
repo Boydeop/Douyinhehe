@@ -167,7 +167,8 @@ class Store:
             conn.execute("UPDATE sources SET creator='',evidence='',expires_on='',evidence_file='',evidence_sha256=''")
             for row in conn.execute("SELECT id,payload FROM render_jobs").fetchall():
                 payload = json.loads(row["payload"])
-                for key in ("creator", "evidence", "expires_on", "evidence_file", "evidence_sha256"):
+                # Expiry is an enforcement date, not private evidence: keep it for retry validation.
+                for key in ("creator", "evidence", "evidence_file", "evidence_sha256"):
                     payload.pop(key, None)
                 payload["creator"] = ""
                 payload["evidence"] = ""
